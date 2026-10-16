@@ -2,7 +2,7 @@ import * as child_process from 'node:child_process';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { OverlayAlertPayload } from './types.js';
+import type { OverlayAlertPayload } from './types.js';
 import { generateLayerAHandoff } from '../handoff/generator.js';
 
 export interface OverlayLauncherOptions {
