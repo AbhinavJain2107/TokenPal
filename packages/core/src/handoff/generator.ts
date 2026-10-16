@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { TokenPalDatabase } from '../db/database.js';
 import { Session } from '../types.js';
-
+import { Summarizer } from '../summary/interface.js';
 
 export interface HandoffOptions {
   projectPath?: string;
@@ -12,7 +12,9 @@ export interface HandoffOptions {
   firstUserMessage?: string;
   latestUserMessage?: string;
   sessionLogPath?: string;
+  summarizer?: Summarizer;
 }
+
 
 export interface HandoffResult {
   markdown: string;
@@ -128,7 +130,37 @@ export async function generateLayerAHandoff(options: HandoffOptions = {}): Promi
   const taskGoal = goal ? (goal.length > 140 ? goal.slice(0, 137) + '...' : goal) : 'Continue active milestone task';
   const currentStatus = latestTask ? (latestTask.length > 140 ? latestTask.slice(0, 137) + '...' : latestTask) : 'Working on codebase updates';
 
-  // 4. Format template according to PRD lines 90-102
+  // 4. Layer B Narrative (Optional)
+  let decisionsText = 'See git history and commit notes.';
+  let openProblemsText = 'None reported blocking.';
+  let nextStepsText = 'Resume from handoff state.';
+
+  if (options.summarizer && (await options.summarizer.isAvailable())) {
+    try {
+      const narrative = await options.summarizer.summarize(`${taskGoal}\n${currentStatus}\n${gitDiffStat}`);
+      const parts: string[] = [];
+      if (narrative.decisions.length > 0) {
+        parts.push(narrative.decisions.join('; '));
+      }
+      if (narrative.ruledOut.length > 0) {
+        parts.push(`Ruled out: ${narrative.ruledOut.join('; ')}`);
+      }
+      if (parts.length > 0) {
+        decisionsText = parts.join(' | ');
+      }
+      if (narrative.openProblems.length > 0) {
+        openProblemsText = narrative.openProblems.join('; ');
+      }
+      if (narrative.nextSteps.length > 0) {
+        nextStepsText = narrative.nextSteps.join('; ');
+      }
+    } catch {
+      // Keep defaults on failure
+    }
+  }
+
+
+  // 5. Format template according to PRD lines 90-102
   const lines: string[] = [
     `# Handoff: ${path.basename(projectPath)}`,
     `Branch / last commit: ${branch} (${lastCommit})`,
@@ -139,14 +171,15 @@ export async function generateLayerAHandoff(options: HandoffOptions = {}): Promi
     gitDiffStat.split('\n').slice(0, 12).join('\n'),
     '```',
     `Last checks: ${lastChecks}`,
-    `Decisions and ruled-out approaches: See git history and commit notes.`,
-    `Open problems: None reported blocking.`,
-    `Next steps: Resume from handoff state.`,
+    `Decisions and ruled-out approaches: ${decisionsText}`,
+    `Open problems: ${openProblemsText}`,
+    `Next steps: ${nextStepsText}`,
     `Note: verify state with git diff before continuing.`
   ];
 
   const markdown = lines.join('\n');
   const lineCount = lines.length;
+
 
   // 5. Write to .handoff/latest.md
   const handoffDir = path.join(projectPath, '.handoff');

@@ -11,3 +11,7 @@ export * from './rules/engine.js';
 export * from './handoff/generator.js';
 export * from './overlay/types.js';
 export * from './overlay/launcher.js';
+export * from './summary/interface.js';
+export * from './summary/redaction.js';
+export * from './summary/ollama.js';
+export * from './settings/manager.js';
