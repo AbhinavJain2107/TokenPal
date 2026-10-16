@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TokenPal Mascot</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      user-select: none;
+      -webkit-app-region: drag;
+      overflow: hidden;
+      width: 360px;
+      height: 250px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    /* Speech Bubble */
+    .bubble {
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      padding: 12px 14px;
+      color: #f8fafc;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      width: 100%;
+      margin-bottom: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      -webkit-app-region: no-drag;
+    }
+
+    .bubble-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge-green { color: #10b981; }
+    .badge-yellow { color: #f59e0b; }
+    .badge-red { color: #ef4444; }
+
+    .bubble-reason {
+      font-size: 12px;
+      line-height: 1.4;
+      color: #e2e8f0;
+      font-weight: 500;
+    }
+
+    .bubble-advice {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+
+    .bubble-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #f8fafc;
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      outline: none;
+    }
+    button:hover {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: rgba(255, 255, 255, 0.35);
+    }
+    button.primary {
+      background: #3b82f6;
+      border-color: #60a5fa;
+      color: #fff;
+    }
+    button.primary:hover {
+      background: #2563eb;
+    }
+
+    /* Details Panel */
+    .details {
+      display: none;
+      font-size: 10px;
+      color: #94a3b8;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      padding-top: 6px;
+      gap: 4px;
+    }
+
+    /* Mascot Character Container */
+    .mascot-container {
+      width: 64px;
+      height: 64px;
+      cursor: grab;
+      -webkit-app-region: drag;
+      position: relative;
+    }
+
+    /* Original Geometric Character SVG */
+    svg.mascot-svg {
+      width: 100%;
+      height: 100%;
+      filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
+    }
+
+    .eye { fill: #f8fafc; transition: all 0.2s; }
+    .pupil { fill: #0f172a; }
+    .core { transition: fill 0.3s, filter 0.3s; }
+    .core-green { fill: #10b981; filter: drop-shadow(0 0 6px #10b981); }
+    .core-yellow { fill: #f59e0b; filter: drop-shadow(0 0 8px #f59e0b); }
+    .core-red { fill: #ef4444; filter: drop-shadow(0 0 10px #ef4444); }
+  </style>
+</head>
+<body>
+
+  <!-- Speech Bubble -->
+  <div class="bubble" id="bubble">
+    <div class="bubble-header">
+      <span id="badge" class="badge-green">● HEALTHY</span>
+      <span id="ruleName" style="opacity: 0.6;"></span>
+    </div>
+    <div class="bubble-reason" id="reason">Watching session tokens...</div>
+    <div class="bubble-advice" id="advice">Everything looks good.</div>
+
+    <div class="bubble-actions">
+      <button class="primary" id="btnHandoff">Copy Handoff</button>
+      <button id="btnSnooze">Snooze 30m</button>
+      <button id="btnDismiss">Dismiss</button>
+      <button id="btnDetails">Details</button>
+    </div>
+
+    <div class="details" id="detailsPanel">
+      <div>Context: <span id="detContext">0</span> tokens</div>
+      <div>Turn: <span id="detTurn">0</span> | Model: <span id="detModel">-</span></div>
+    </div>
+  </div>
+
+  <!-- Mascot Character -->
+  <div class="mascot-container" id="mascot">
+    <svg class="mascot-svg" viewBox="0 0 64 64">
+      <!-- Antenna -->
+      <line x1="32" y1="14" x2="32" y2="4" stroke="#94a3b8" stroke-width="2.5" stroke-linecap="round" />
+      <circle id="antennaOrb" cx="32" cy="4" r="3.5" class="core core-green" />
+
+      <!-- Head / Body Capsule -->
+      <rect x="12" y="14" width="40" height="42" rx="16" fill="#1e293b" stroke="#334155" stroke-width="2" />
+
+      <!-- Face Visor -->
+      <rect x="18" y="22" width="28" height="18" rx="8" fill="#0f172a" />
+
+      <!-- Digital Eyes -->
+      <circle id="eyeLeft" class="eye" cx="26" cy="30" r="3" />
+      <circle id="eyeRight" class="eye" cx="38" cy="30" r="3" />
+
+      <!-- Chest Core Beacon -->
+      <circle id="chestCore" cx="32" cy="46" r="4.5" class="core core-green" />
+
+      <!-- Left Arm -->
+      <path id="armLeft" d="M 12 34 Q 6 36 8 44" stroke="#94a3b8" stroke-width="2.5" fill="none" stroke-linecap="round" />
+      <!-- Right Arm (waves during red alert) -->
+      <path id="armRight" d="M 52 34 Q 58 36 56 44" stroke="#94a3b8" stroke-width="2.5" fill="none" stroke-linecap="round" />
+    </svg>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    const bubble = document.getElementById('bubble');
+    const badge = document.getElementById('badge');
+    const ruleName = document.getElementById('ruleName');
+    const reason = document.getElementById('reason');
+    const advice = document.getElementById('advice');
+    const detailsPanel = document.getElementById('detailsPanel');
+    const detContext = document.getElementById('detContext');
+    const detTurn = document.getElementById('detTurn');
+    const detModel = document.getElementById('detModel');
+
+    const antennaOrb = document.getElementById('antennaOrb');
+    const chestCore = document.getElementById('chestCore');
+    const armRight = document.getElementById('armRight');
+    const mascot = document.getElementById('mascot');
+
+    let currentState = 'green';
+    let isLowPower = false;
+    let isRoaming = false;
+    let animationActive = true;
+
+    // 18 FPS Throttled Loop
+    const TARGET_FPS = 18;
+    const FRAME_INTERVAL = 1000 / TARGET_FPS;
+    let lastFrameTime = performance.now();
+    let tickCount = 0;
+
+    function renderLoop(now) {
+      if (!animationActive || isLowPower) return;
+      requestAnimationFrame(renderLoop);
+
+      const delta = now - lastFrameTime;
+      if (delta < FRAME_INTERVAL) return;
+      lastFrameTime = now - (delta % FRAME_INTERVAL);
+      tickCount++;
+
+      // Calm breathing / bobbing
+      if (currentState === 'green') {
+        const yOffset = Math.sin(tickCount * 0.1) * 2;
+        mascot.style.transform = `translateY(${yOffset}px)`;
+        armRight.setAttribute('d', 'M 52 34 Q 58 36 56 44');
+      } else if (currentState === 'yellow') {
+        // Warning gentle pulse
+        const yOffset = Math.sin(tickCount * 0.15) * 3;
+        mascot.style.transform = `translateY(${yOffset}px)`;
+        armRight.setAttribute('d', 'M 52 34 Q 58 36 56 44');
+      } else if (currentState === 'red') {
+        // Urgent waving gesture
+        const armAngle = Math.sin(tickCount * 0.4) * 8;
+        armRight.setAttribute('d', `M 52 34 Q 60 ${20 + armAngle} 58 ${16 - armAngle}`);
+        const shake = (tickCount % 2 === 0) ? -1 : 1;
+        mascot.style.transform = `translateX(${shake}px)`;
+      }
+    }
+
+    requestAnimationFrame(renderLoop);
+
+    function updateState(payload) {
+      currentState = payload.state || 'green';
+
+      badge.className = `badge-${currentState}`;
+      badge.textContent = `● ${currentState.toUpperCase()}`;
+      ruleName.textContent = payload.rule ? `[${payload.rule}]` : '';
+      reason.textContent = payload.reason || 'Session is healthy';
+      advice.textContent = payload.advice || 'No action needed.';
+
+      if (payload.contextTokens) detContext.textContent = payload.contextTokens.toLocaleString();
+      if (payload.turnIndex) detTurn.textContent = payload.turnIndex;
+      if (payload.model) detModel.textContent = payload.model;
+
+      antennaOrb.className.baseVal = `core core-${currentState}`;
+      chestCore.className.baseVal = `core core-${currentState}`;
+
+      // In green state with no warning, hide speech bubble unless hovered
+      if (currentState === 'green' && !payload.rule) {
+        bubble.style.display = 'none';
+      } else {
+        bubble.style.display = 'flex';
+      }
+    }
+
+    // Button actions
+    document.getElementById('btnHandoff').addEventListener('click', () => {
+      ipcRenderer.send('action:copy-handoff');
+    });
+
+    document.getElementById('btnSnooze').addEventListener('click', () => {
+      ipcRenderer.send('action:snooze', 30);
+    });
+
+    document.getElementById('btnDismiss').addEventListener('click', () => {
+      ipcRenderer.send('action:dismiss');
+    });
+
+    document.getElementById('btnDetails').addEventListener('click', () => {
+      const isVisible = detailsPanel.style.display === 'flex';
+      detailsPanel.style.display = isVisible ? 'none' : 'flex';
+    });
+
+    // IPC from Main Process
+    ipcRenderer.on('overlay:update', (event, data) => {
+      updateState(data);
+    });
+
+    ipcRenderer.on('overlay:low-power', (event, enabled) => {
+      isLowPower = enabled;
+      if (!isLowPower) {
+        animationActive = true;
+        requestAnimationFrame(renderLoop);
+      }
+    });
+  </script>
+</body>
+</html>

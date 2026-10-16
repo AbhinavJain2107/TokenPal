@@ -5,9 +5,10 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp src/mascot.html dist/mascot.html",
     "type-check": "tsc --noEmit"
   },
+
   "devDependencies": {
     "electron": "^33.2.1"
   }

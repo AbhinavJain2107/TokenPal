@@ -9,3 +9,5 @@ export * from './rules/types.js';
 export * from './rules/config.js';
 export * from './rules/engine.js';
 export * from './handoff/generator.js';
+export * from './overlay/types.js';
+export * from './overlay/launcher.js';
