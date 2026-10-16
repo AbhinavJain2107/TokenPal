@@ -8,3 +8,4 @@ export * from './replay/replay.js';
 export * from './rules/types.js';
 export * from './rules/config.js';
 export * from './rules/engine.js';
+export * from './handoff/generator.js';

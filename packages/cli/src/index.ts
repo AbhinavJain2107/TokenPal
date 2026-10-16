@@ -9,8 +9,10 @@ import {
   replaySessionFile,
   CodexAdapter,
   RulesEngine,
-  loadRuleThresholds
+  loadRuleThresholds,
+  generateLayerAHandoff
 } from '@tokenpal/core';
+
 
 const program = new Command();
 
@@ -183,4 +185,52 @@ program
     }
   });
 
+program
+  .command('handoff')
+  .description('Generate a Layer A context handoff summary from git state and session facts')
+  .option('-p, --project <dir>', 'Project root directory', process.cwd())
+  .option('-s, --session <id>', 'Specific session ID to summarize')
+  .option('--db <path>', 'Path to SQLite database', path.join(os.homedir(), '.tokenpal', 'tokenpal.sqlite'))
+  .action(async (options) => {
+    const projectPath = path.resolve(options.project);
+    let session;
+    let db: TokenPalDatabase | undefined;
+
+    if (fs.existsSync(options.db)) {
+      db = new TokenPalDatabase(options.db);
+      if (options.session) {
+        session = db.getSession(options.session);
+      } else {
+        const recent = db.getRecentSessions(1);
+        if (recent.length > 0) session = recent[0];
+      }
+    }
+
+    console.log(`Generating handoff for: ${projectPath}`);
+    const result = await generateLayerAHandoff({
+      projectPath,
+      session,
+      db
+    });
+
+    console.log(`✓ Handoff generated (${result.lineCount} lines, target < 60)`);
+    console.log(`✓ Saved to: ${result.filePath}`);
+
+    if (result.copiedToClipboard) {
+      console.log('✓ Copied to clipboard automatically');
+    } else {
+      console.log('ℹ Clipboard copy unavailable (saved to file only)');
+    }
+
+    if (!result.gitignored) {
+      console.warn('\n⚠️  WARNING: .handoff is not found in your .gitignore!');
+      console.warn('   Add ".handoff/" to .gitignore to avoid committing handoffs to git.\n');
+    }
+
+    console.log('\n' + '='.repeat(60));
+    console.log(result.markdown);
+    console.log('='.repeat(60));
+  });
+
 program.parse(process.argv);
+
