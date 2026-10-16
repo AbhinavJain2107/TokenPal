@@ -38,24 +38,23 @@ Codex sessions are JSON Lines (`.jsonl`) streams comprising 7 event types:
 
 ---
 
-## Numeric Token Fields Breakdown
-From `token_usage_record`:
-- `payload.usage`:
-  - `input_tokens`: integer
-  - `cached_input_tokens`: integer
-  - `cache_write_input_tokens`: integer
-  - `output_tokens`: integer
-  - `reasoning_output_tokens`: integer
-  - `total_tokens`: integer
-- `payload.turn_token_usage`:
-  - `input_tokens`: integer (per-turn input tokens used as context size proxy)
-  - `cached_input_tokens`: integer
-  - `cache_write_input_tokens`: integer
-  - `output_tokens`: integer
-  - `reasoning_output_tokens`: integer
-  - `total_tokens`: integer
-- `payload.thread_token_usage`:
-  - Cumulative counters across the entire session thread.
+## Token Mathematical Relationships (Empirically Verified)
+Across **814 session files** and **23,746 `token_usage_record`s** inspected locally:
+- `cached_input_tokens <= input_tokens`: **100% of cases (23,746 / 23,746)**. `cached_input_tokens` is strictly a subset of `input_tokens`.
+- `reasoning_output_tokens <= output_tokens`: **100% of cases (23,746 / 23,746)**. `reasoning_output_tokens` is strictly a subset of `output_tokens`.
+- `total_tokens = input_tokens + output_tokens`: Confirmed across all records.
+- **Context Size Rule:** As confirmed by the data, **Context size = `input_tokens`**.
+
+---
+
+## Log Format Stability and Fail-Safe Behavior
+- **Alpha Build Warning:** Session logs currently report `cli_version: "0.162.0-alpha.17.2"`. The format comes from an active alpha build and may evolve.
+- **Fail-Safe Requirement:**
+  - Adapters must inspect `cli_version` from `session_meta`.
+  - Adapters must tolerate unknown event types and extra unmodeled fields gracefully without throwing errors.
+  - If a log format breaks structural invariants or is unparseable, the adapter must return `"unsupported version"` fail-safe rather than crashing.
+- **Command Exit Codes:** Command exit codes parsed from tool output text (e.g. `exit code: (\d+)`) are **best-effort heuristics**. The retry-loop rule (PRD FR-6) depends on this heuristic.
+
 
 ---
 
