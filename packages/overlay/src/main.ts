@@ -1,6 +1,10 @@
 import { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage } from 'electron';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { OverlayAlertPayload } from './types.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 
 let mainWindow: BrowserWindow | null = null;
@@ -52,6 +56,12 @@ function createWindow(): void {
 
   const htmlPath = path.join(__dirname, 'mascot.html');
   mainWindow.loadFile(htmlPath);
+
+  mainWindow.webContents.on('console-message', (_event, _level, message) => {
+    if (message.includes('[TokenPal Animation]')) {
+      console.log(message);
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;

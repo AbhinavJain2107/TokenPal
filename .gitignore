@@ -11,4 +11,5 @@ tmp/
 AGENTS.md
 PROGRESS.md
 PRD.md
-
+.env.local
+.env

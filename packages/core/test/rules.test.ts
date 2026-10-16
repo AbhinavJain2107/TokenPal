@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import * as path from 'node:path';
 import { RulesEngine } from '../src/rules/engine.js';
 import { Session, Turn, ToolEvent } from '../src/types.js';
+import { replaySessionFile } from '../src/replay/replay.js';
+import { CodexAdapter } from '../src/adapters/codex.js';
 
 describe('RulesEngine - PRD 6.2 Signals', () => {
   const dummySession: Session = {
@@ -27,12 +30,12 @@ describe('RulesEngine - PRD 6.2 Signals', () => {
     ...overrides
   });
 
-  it('Rule 1: Context Growth triggers red alert when context is >= 3x first turn', () => {
+  it('Rule 1: Context Growth triggers red alert when context is >= 4.5x first turn', () => {
     const engine = new RulesEngine();
     const turns = [
       createTurn(1, 10000),
       createTurn(2, 20000),
-      createTurn(3, 31000) // 3.1x growth
+      createTurn(3, 46000) // 4.6x growth >= 4.5
     ];
 
     const result = engine.evaluate(dummySession, turns, []);
@@ -172,28 +175,57 @@ describe('RulesEngine - PRD 6.2 Signals', () => {
     const engine = new RulesEngine();
     const turns = [
       createTurn(1, 10000),
-      createTurn(2, 35000) // 3.5x growth -> should alert
+      createTurn(2, 46000) // 4.6x growth -> should alert
     ];
 
     const firstEval = engine.evaluate(dummySession, turns, [], true);
     expect(firstEval.shouldAlert).toBe(true);
 
-    // Turn 3: slight growth (36000), cooldown should suppress alert
+    // Turn 3: slight growth (47000), cooldown should suppress alert
     const turnsWithSlightGrowth = [
       ...turns,
-      createTurn(3, 36000)
+      createTurn(3, 47000)
     ];
     const secondEval = engine.evaluate(dummySession, turnsWithSlightGrowth, [], true);
     expect(secondEval.cooldownActive).toBe(true);
     expect(secondEval.shouldAlert).toBe(false);
 
-    // Turn 4: material worsening (>20% growth: 45000 tokens) -> should alert again
+    // Turn 4: material worsening (>20% growth: 58000 tokens) -> should alert again
     const turnsWithMaterialGrowth = [
       ...turnsWithSlightGrowth,
-      createTurn(4, 46000)
+      createTurn(4, 58000)
     ];
     const thirdEval = engine.evaluate(dummySession, turnsWithMaterialGrowth, [], true);
     expect(thirdEval.cooldownActive).toBe(false);
     expect(thirdEval.shouldAlert).toBe(true);
+  });
+
+  it('Tuned thresholds on codex-sample fixture fire RED at Turn #4 (106k tokens), keeping Turn #3 (74k) as YELLOW', async () => {
+    const fixturePath = path.resolve(__dirname, 'fixtures', 'codex-sample.jsonl');
+    const res = await replaySessionFile(fixturePath, [new CodexAdapter()]);
+
+    expect(res.error).toBeUndefined();
+    expect(res.turns).toHaveLength(5);
+
+    // Turn 2: 46,999 tokens -> YELLOW warning (2.06x initial)
+    expect(res.turns[1].turnIndex).toBe(2);
+    expect(res.turns[1].inputTokens).toBe(46999);
+    expect(res.turns[1].state).toBe('yellow');
+
+    // Turn 3: 74,208 tokens -> stays YELLOW (3.26x initial, < 4.5x and < 120k)
+    expect(res.turns[2].turnIndex).toBe(3);
+    expect(res.turns[2].inputTokens).toBe(74208);
+    expect(res.turns[2].state).toBe('yellow');
+
+    // Turn 4: 106,204 tokens -> triggers RED alert (4.67x initial >= 4.5x, in 100k-150k target range)
+    expect(res.turns[3].turnIndex).toBe(4);
+    expect(res.turns[3].inputTokens).toBe(106204);
+    expect(res.turns[3].state).toBe('red');
+    expect(res.turns[3].alert?.rule).toBe('context_growth');
+    expect(res.turns[3].alert?.severity).toBe('red');
+
+    // Turn 5: 32,535 tokens (reset/compacted) -> green
+    expect(res.turns[4].turnIndex).toBe(5);
+    expect(res.turns[4].state).toBe('green');
   });
 });

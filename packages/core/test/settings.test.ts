@@ -25,7 +25,8 @@ describe('SettingsManager (M5)', () => {
     expect(config.mascotEnabled).toBe(true);
     expect(config.notificationsEnabled).toBe(true);
     expect(config.summarizer.enabled).toBe(false); // off by default
-    expect(config.thresholds.contextGrowthMultiplier).toBe(3.0);
+    expect(config.thresholds.contextGrowthMultiplier).toBe(4.5);
+    expect(config.thresholds.contextMaxTokens).toBe(120000);
   });
 
   it('persists and updates configuration settings to disk', () => {

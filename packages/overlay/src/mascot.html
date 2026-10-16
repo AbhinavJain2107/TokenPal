@@ -208,6 +208,8 @@
     const FRAME_INTERVAL = 1000 / TARGET_FPS;
     let lastFrameTime = performance.now();
     let tickCount = 0;
+    let lastFpsUpdate = performance.now();
+    let frameCounter = 0;
 
     function renderLoop(now) {
       if (!animationActive || isLowPower) return;
@@ -217,6 +219,14 @@
       if (delta < FRAME_INTERVAL) return;
       lastFrameTime = now - (delta % FRAME_INTERVAL);
       tickCount++;
+      frameCounter++;
+
+      if (now - lastFpsUpdate >= 1000) {
+        const actualFps = Math.round((frameCounter * 1000) / (now - lastFpsUpdate));
+        console.log(`[TokenPal Animation] FPS: ${actualFps} | Total Frames: ${tickCount}`);
+        frameCounter = 0;
+        lastFpsUpdate = now;
+      }
 
       // Calm breathing / bobbing
       if (currentState === 'green') {
