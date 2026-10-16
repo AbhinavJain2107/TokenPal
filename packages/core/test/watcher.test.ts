@@ -49,6 +49,7 @@ describe('SessionWatcher', () => {
       timestamp: '2026-10-16T12:01:00Z',
       payload: {
         session_id: 'test-sess-w',
+        turn_id: 'turn-w-1',
         turn_token_usage: {
           input_tokens: 5000,
           cached_input_tokens: 2000,
@@ -80,6 +81,7 @@ describe('SessionWatcher', () => {
       timestamp: '2026-10-16T12:02:00Z',
       payload: {
         session_id: 'test-sess-w',
+        turn_id: 'turn-w-2',
         turn_token_usage: {
           input_tokens: 12000,
           cached_input_tokens: 4500,
@@ -88,6 +90,7 @@ describe('SessionWatcher', () => {
         }
       }
     }) + '\n';
+
     fs.appendFileSync(sessionFile, line3);
 
     await watcher.scanAndProcess();

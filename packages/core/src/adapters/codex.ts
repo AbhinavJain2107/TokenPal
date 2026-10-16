@@ -196,7 +196,7 @@ export class CodexAdapter implements AgentAdapter {
         const reasoningTokens = typeof turnUsage.reasoning_output_tokens === 'number' ? turnUsage.reasoning_output_tokens : 0;
 
         const turn: Turn = {
-          id: payload.turn_id || payload.response_id || `turn-${turns.length + 1}-${Date.now()}`,
+          id: payload.turn_id || payload.response_id || `turn-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
           session_id: currentSessionId || 'unknown',
           ts,
           input_tokens: inputTokens,
@@ -207,6 +207,7 @@ export class CodexAdapter implements AgentAdapter {
           effort: activeEffort,
           tool_output_bytes: accumulatedToolBytesInTurn
         };
+
 
         turns.push(turn);
         accumulatedToolBytesInTurn = 0; // reset for next turn
