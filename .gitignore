@@ -8,4 +8,7 @@ dist/
 coverage/
 tmp/
 *.tsbuildinfo
+AGENTS.md
+PROGRESS.md
+PRD.md
 
