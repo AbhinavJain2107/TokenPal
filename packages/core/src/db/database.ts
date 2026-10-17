@@ -154,7 +154,11 @@ export class TokenPalDatabase {
     return stmt.get() as MeterSnapshot | undefined;
   }
 
-  public getRecentMeterSnapshots(sinceTs: string): MeterSnapshot[] {
+  public getRecentMeterSnapshots(sinceTs: string, limit?: number): MeterSnapshot[] {
+    if (typeof limit === 'number') {
+      const stmt = this.db.prepare('SELECT * FROM meter_snapshots WHERE ts >= ? ORDER BY ts ASC LIMIT ?');
+      return stmt.all(sinceTs, limit) as MeterSnapshot[];
+    }
     const stmt = this.db.prepare('SELECT * FROM meter_snapshots WHERE ts >= ? ORDER BY ts ASC');
     return stmt.all(sinceTs) as MeterSnapshot[];
   }
