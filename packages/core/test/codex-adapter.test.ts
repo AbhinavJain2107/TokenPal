@@ -32,6 +32,9 @@ describe('CodexAdapter', () => {
     }
 
     expect(result.newOffset).toBe(fs.statSync(fixturePath).size);
+    expect(result.userMessagesCount).toBe(4);
+    expect(result.modelCallsCount).toBe(5);
+    expect(result.compactionsCount).toBe(0);
   });
 
   it('handles partial lines safely without corruption', async () => {

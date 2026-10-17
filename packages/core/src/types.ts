@@ -21,6 +21,8 @@ export interface Turn {
   model: string | null;
   effort: string | null;
   tool_output_bytes: number;
+  user_message_index?: number;
+  call_index?: number;
 }
 
 export interface ToolEvent {
@@ -69,6 +71,9 @@ export interface ParseResult {
   newOffset: number;
   cliVersion?: string;
   error?: string;
+  userMessagesCount?: number;
+  modelCallsCount?: number;
+  compactionsCount?: number;
 }
 
 export interface TurnEventPayload {

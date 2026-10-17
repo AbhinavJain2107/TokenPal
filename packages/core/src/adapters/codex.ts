@@ -83,6 +83,9 @@ export class CodexAdapter implements AgentAdapter {
     let lastEventAt: string | null = null;
     let pendingToolCalls = new Map<string, { name: string; callId: string; ts: string }>();
     let accumulatedToolBytesInTurn = 0;
+    let userMessagesCount = 0;
+    let modelCallsCount = 0;
+    let compactionsCount = 0;
 
     let validJsonCount = 0;
     let parseErrorCount = 0;
@@ -135,6 +138,11 @@ export class CodexAdapter implements AgentAdapter {
       if (eventType === 'response_item' || payload.call_id || payload.type === 'message') {
         const itemType = payload.type;
 
+        // User message detection
+        if (itemType === 'message' && payload.role === 'user') {
+          userMessagesCount++;
+        }
+
         // Custom tool call or function call
         if (itemType === 'custom_tool_call' || itemType === 'function_call') {
           const callId = payload.call_id || payload.id;
@@ -185,8 +193,14 @@ export class CodexAdapter implements AgentAdapter {
         }
       }
 
-      // 5. token_usage_record
+      // 5. compacted event
+      if (eventType === 'compacted') {
+        compactionsCount++;
+      }
+
+      // 6. token_usage_record (model call)
       if (eventType === 'token_usage_record' || (payload.usage && payload.turn_token_usage)) {
+        modelCallsCount++;
         currentSessionId = payload.session_id || payload.thread_id || currentSessionId;
         const turnUsage = payload.turn_token_usage || payload.usage || {};
 
@@ -205,7 +219,9 @@ export class CodexAdapter implements AgentAdapter {
           reasoning_tokens: reasoningTokens,
           model: activeModel,
           effort: activeEffort,
-          tool_output_bytes: accumulatedToolBytesInTurn
+          tool_output_bytes: accumulatedToolBytesInTurn,
+          user_message_index: userMessagesCount,
+          call_index: modelCallsCount
         };
 
 
@@ -236,7 +252,10 @@ export class CodexAdapter implements AgentAdapter {
       turns,
       toolEvents,
       newOffset,
-      cliVersion
+      cliVersion,
+      userMessagesCount,
+      modelCallsCount,
+      compactionsCount
     };
   }
 }
