@@ -71,4 +71,27 @@ CREATE TABLE IF NOT EXISTS file_offsets (
   last_mtime INTEGER NOT NULL DEFAULT 0,
   last_session_id TEXT
 );
+
+CREATE TABLE IF NOT EXISTS meter_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT,
+  ts TEXT NOT NULL,
+  used_percent REAL NOT NULL,
+  window_minutes INTEGER NOT NULL,
+  resets_at INTEGER NOT NULL,
+  plan_type TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_meter_snapshots_ts ON meter_snapshots(ts);
+
+CREATE TABLE IF NOT EXISTS quota_resets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL,
+  prev_used_percent REAL,
+  prev_resets_at INTEGER,
+  new_resets_at INTEGER NOT NULL,
+  is_early INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_quota_resets_ts ON quota_resets(ts);
 `;

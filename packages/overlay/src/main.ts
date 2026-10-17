@@ -29,7 +29,7 @@ function createWindow(): void {
   const { width, height } = primaryDisplay.workAreaSize;
 
   const winWidth = 360;
-  const winHeight = 250;
+  const winHeight = 280;
 
   mainWindow = new BrowserWindow({
     width: winWidth,
@@ -68,58 +68,89 @@ function createWindow(): void {
   });
 }
 
+function updateTray(payload?: OverlayAlertPayload): void {
+  if (!tray) return;
+  const meter = payload?.meter;
+  const tooltip = meter
+    ? `TokenPal: ${Math.round(meter.usedPercent)}% (Resets in ${meter.timeToResetFormatted})`
+    : 'TokenPal Guardian Mascot';
+  tray.setToolTip(tooltip);
+
+  const template: Electron.MenuItemConstructorOptions[] = [];
+  if (meter) {
+    template.push({
+      label: `Quota: ${Math.round(meter.usedPercent)}% · Resets in ${meter.timeToResetFormatted} [${meter.planType || 'prolite'}]`,
+      enabled: false
+    });
+    if (meter.earlyResetsNote) {
+      template.push({ label: `⚠️ ${meter.earlyResetsNote}`, enabled: false });
+    }
+    if (meter.projectedExhaustionText) {
+      template.push({ label: `⏳ ${meter.projectedExhaustionText}`, enabled: false });
+    }
+    if (meter.modelBadgeText) {
+      template.push({ label: `💡 ${meter.modelBadgeText}`, enabled: false });
+    }
+    if (meter.requestCostDisplay) {
+      template.push({ label: `📊 Last request: ${meter.requestCostDisplay}`, enabled: false });
+    }
+    template.push({ type: 'separator' });
+  }
+
+  template.push(
+    {
+      label: 'Hide Mascot',
+      click: () => {
+        if (mainWindow) mainWindow.hide();
+      }
+    },
+    {
+      label: 'Show Mascot',
+      click: () => {
+        if (mainWindow) mainWindow.showInactive();
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Snooze (30m)',
+      click: () => {
+        sendActionToHost('snooze', 30);
+        if (mainWindow) mainWindow.hide();
+      }
+    },
+    {
+      label: 'Low-Power Mode',
+      type: 'checkbox',
+      checked: isLowPower,
+      click: (item) => {
+        isLowPower = item.checked;
+        if (mainWindow) mainWindow.webContents.send('overlay:low-power', isLowPower);
+      }
+    },
+    {
+      label: 'Roaming Mode',
+      type: 'checkbox',
+      checked: isRoaming,
+      click: (item) => {
+        isRoaming = item.checked;
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit TokenPal Mascot',
+      click: () => {
+        app.quit();
+      }
+    }
+  );
+
+  tray.setContextMenu(Menu.buildFromTemplate(template));
+}
+
 function createTray(): void {
   try {
     tray = new Tray(createTrayIcon());
-    const contextMenu = Menu.buildFromTemplate([
-      {
-        label: 'Hide Mascot',
-        click: () => {
-          if (mainWindow) mainWindow.hide();
-        }
-      },
-      {
-        label: 'Show Mascot',
-        click: () => {
-          if (mainWindow) mainWindow.showInactive();
-        }
-      },
-      { type: 'separator' },
-      {
-        label: 'Snooze (30m)',
-        click: () => {
-          sendActionToHost('snooze', 30);
-          if (mainWindow) mainWindow.hide();
-        }
-      },
-      {
-        label: 'Low-Power Mode',
-        type: 'checkbox',
-        checked: isLowPower,
-        click: (item) => {
-          isLowPower = item.checked;
-          if (mainWindow) mainWindow.webContents.send('overlay:low-power', isLowPower);
-        }
-      },
-      {
-        label: 'Roaming Mode',
-        type: 'checkbox',
-        checked: isRoaming,
-        click: (item) => {
-          isRoaming = item.checked;
-        }
-      },
-      { type: 'separator' },
-      {
-        label: 'Quit TokenPal Mascot',
-        click: () => {
-          app.quit();
-        }
-      }
-    ]);
-
-    tray.setToolTip('TokenPal Guardian Mascot');
-    tray.setContextMenu(contextMenu);
+    updateTray();
   } catch {
     // tray creation is optional if system doesn't support it
   }
@@ -154,9 +185,10 @@ process.stdin.on('data', (chunk) => {
     if (!line.trim()) continue;
     try {
       const msg = JSON.parse(line.trim());
-      if (msg.type === 'SHOW_ALERT' && mainWindow) {
+      if ((msg.type === 'SHOW_ALERT' || msg.type === 'METER_UPDATE') && mainWindow) {
         mainWindow.showInactive();
         mainWindow.webContents.send('overlay:update', msg.payload);
+        updateTray(msg.payload);
 
         // Auto-dismiss after 60s if not interacted
         if (autoDismissTimer) clearTimeout(autoDismissTimer);

@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { AgentAdapter } from './interface.js';
-import { ParseResult, Session, Turn, ToolEvent } from '../types.js';
+import { ParseResult, Session, Turn, ToolEvent, MeterReading, TaskLifecycleEvent } from '../types.js';
 
 export class CodexAdapter implements AgentAdapter {
   readonly id = 'codex';
@@ -71,6 +71,8 @@ export class CodexAdapter implements AgentAdapter {
     const lines = content.split('\n');
     const turns: Turn[] = [];
     const toolEvents: ToolEvent[] = [];
+    const meterReadings: MeterReading[] = [];
+    const taskEvents: TaskLifecycleEvent[] = [];
     let sessionData: Partial<Session> | undefined;
     let cliVersion: string | undefined;
 
@@ -228,6 +230,41 @@ export class CodexAdapter implements AgentAdapter {
         turns.push(turn);
         accumulatedToolBytesInTurn = 0; // reset for next turn
       }
+
+      // 7. event_msg (rate limits meter & task boundaries)
+      if (eventType === 'event_msg') {
+        const msgType = payload.type;
+        if (msgType === 'token_count') {
+          const rl = payload.rate_limits?.primary;
+          if (rl && typeof rl.used_percent === 'number' && typeof rl.resets_at === 'number' && typeof rl.window_minutes === 'number') {
+            meterReadings.push({
+              sessionId: currentSessionId || undefined,
+              ts,
+              usedPercent: rl.used_percent,
+              windowMinutes: rl.window_minutes,
+              resetsAt: rl.resets_at,
+              planType: payload.rate_limits?.plan_type || undefined
+            });
+          }
+        } else if (msgType === 'task_started') {
+          taskEvents.push({
+            type: 'task_started',
+            turnId: payload.turn_id,
+            sessionId: currentSessionId || undefined,
+            ts,
+            startedAt: payload.started_at
+          });
+        } else if (msgType === 'task_complete') {
+          taskEvents.push({
+            type: 'task_complete',
+            turnId: payload.turn_id,
+            sessionId: currentSessionId || undefined,
+            ts,
+            completedAt: payload.completed_at,
+            durationMs: payload.duration_ms
+          });
+        }
+      }
     }
 
     // Fail-safe: if lines were read but not a single valid JSON object was parsed
@@ -255,7 +292,10 @@ export class CodexAdapter implements AgentAdapter {
       cliVersion,
       userMessagesCount,
       modelCallsCount,
-      compactionsCount
+      compactionsCount,
+      meterReadings,
+      taskEvents
     };
   }
 }
+

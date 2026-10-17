@@ -5,12 +5,16 @@ import { AgentAdapter } from '../adapters/interface.js';
 import { CodexAdapter } from '../adapters/codex.js';
 import { TokenPalDatabase } from '../db/database.js';
 import { TurnEventPayload, Session } from '../types.js';
+import { MeterReader } from '../meter/meter-reader.js';
+import { RequestCostTracker } from '../meter/request-cost.js';
+
 
 export interface WatcherOptions {
   db: TokenPalDatabase;
   adapters?: AgentAdapter[];
   customDirs?: string[];
   pollIntervalMs?: number;
+  modelMultiplierText?: string;
 }
 
 export class SessionWatcher extends EventEmitter {
@@ -20,6 +24,8 @@ export class SessionWatcher extends EventEmitter {
   private isRunning = false;
   private timer: NodeJS.Timeout | null = null;
   private pollIntervalMs: number;
+  private meterReader: MeterReader;
+  private requestCostTracker: RequestCostTracker;
 
   constructor(options: WatcherOptions) {
     super();
@@ -27,6 +33,18 @@ export class SessionWatcher extends EventEmitter {
     this.adapters = options.adapters || [new CodexAdapter()];
     this.customDirs = options.customDirs || [];
     this.pollIntervalMs = options.pollIntervalMs || 1000;
+    this.meterReader = new MeterReader(this.db, {
+      modelMultiplierText: options.modelMultiplierText
+    });
+    this.requestCostTracker = new RequestCostTracker();
+  }
+
+  public getMeterReader(): MeterReader {
+    return this.meterReader;
+  }
+
+  public getRequestCostTracker(): RequestCostTracker {
+    return this.requestCostTracker;
   }
 
   public async start(): Promise<void> {
@@ -160,6 +178,62 @@ export class SessionWatcher extends EventEmitter {
       this.db.upsertSession(session);
     }
 
+    // Process model switch check
+    const activeModel = parseResult.session?.model || session?.model;
+    if (activeModel) {
+      const switchCheck = this.meterReader.checkModelSwitch(activeModel);
+      if (switchCheck.modelSwitched && switchCheck.notice) {
+        this.emit('model_switch', {
+          sessionId: session?.id,
+          model: activeModel,
+          notice: switchCheck.notice
+        });
+      }
+    }
+
+    // Process meter readings from token_count events
+    if (parseResult.meterReadings && parseResult.meterReadings.length > 0) {
+      for (const reading of parseResult.meterReadings) {
+        const res = this.meterReader.processReading(reading);
+        if (res.resetDetected && res.reset) {
+          this.emit('quota_reset', res.reset);
+        }
+        if (res.snapshotStored) {
+          const status = this.meterReader.getMeterStatus(activeModel);
+          if (status) {
+            this.emit('meter', status);
+          }
+        }
+      }
+    }
+
+    // Process task lifecycle events (task_started / task_complete)
+    if (parseResult.taskEvents && parseResult.taskEvents.length > 0) {
+      for (const taskEvent of parseResult.taskEvents) {
+        const currentReading = this.meterReader.getLatestReading();
+        if (currentReading) {
+          if (taskEvent.type === 'task_started') {
+            this.requestCostTracker.onTaskStarted(
+              taskEvent.turnId,
+              taskEvent.ts,
+              currentReading,
+              activeModel,
+              session?.id
+            );
+          } else if (taskEvent.type === 'task_complete') {
+            const cost = this.requestCostTracker.onTaskComplete(
+              taskEvent.turnId,
+              taskEvent.ts,
+              currentReading
+            );
+            if (cost) {
+              this.emit('request_cost', cost);
+            }
+          }
+        }
+      }
+    }
+
     // Process tool events
     for (const tool of parseResult.toolEvents) {
       this.db.insertToolEvent(tool);
@@ -172,12 +246,14 @@ export class SessionWatcher extends EventEmitter {
     for (const turn of parseResult.turns) {
       turnIndex++;
       this.db.insertTurn(turn);
+      this.requestCostTracker.recordCall(turn.id, turn.input_tokens + turn.output_tokens);
       if (session) {
         const payload: TurnEventPayload = {
           session,
           turn,
           turnIndex,
-          isNewTurn: true
+          isNewTurn: true,
+          meterStatus: this.meterReader.getMeterStatus(session.model) || undefined
         };
         this.emit('turn', payload);
       }

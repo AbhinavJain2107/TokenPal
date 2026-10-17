@@ -1,6 +1,6 @@
 import DatabaseConstructor, { Database as BetterSQLiteDatabase } from 'better-sqlite3';
 import { SCHEMA_SQL } from './schema.js';
-import { Session, Turn, ToolEvent, Alert, Handoff, FileOffset } from '../types.js';
+import { Session, Turn, ToolEvent, Alert, Handoff, FileOffset, MeterSnapshot, QuotaReset } from '../types.js';
 
 
 export class TokenPalDatabase {
@@ -133,4 +133,60 @@ export class TokenPalDatabase {
     `);
     stmt.run(key, value);
   }
+
+  public insertMeterSnapshot(snapshot: MeterSnapshot): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO meter_snapshots (session_id, ts, used_percent, window_minutes, resets_at, plan_type)
+      VALUES (@session_id, @ts, @used_percent, @window_minutes, @resets_at, @plan_type)
+    `);
+    stmt.run({
+      session_id: snapshot.session_id || null,
+      ts: snapshot.ts,
+      used_percent: snapshot.used_percent,
+      window_minutes: snapshot.window_minutes,
+      resets_at: snapshot.resets_at,
+      plan_type: snapshot.plan_type || null
+    });
+  }
+
+  public getLatestMeterSnapshot(): MeterSnapshot | undefined {
+    const stmt = this.db.prepare('SELECT * FROM meter_snapshots ORDER BY ts DESC LIMIT 1');
+    return stmt.get() as MeterSnapshot | undefined;
+  }
+
+  public getRecentMeterSnapshots(sinceTs: string): MeterSnapshot[] {
+    const stmt = this.db.prepare('SELECT * FROM meter_snapshots WHERE ts >= ? ORDER BY ts ASC');
+    return stmt.all(sinceTs) as MeterSnapshot[];
+  }
+
+  public insertQuotaReset(reset: QuotaReset): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO quota_resets (ts, prev_used_percent, prev_resets_at, new_resets_at, is_early)
+      VALUES (@ts, @prev_used_percent, @prev_resets_at, @new_resets_at, @is_early)
+    `);
+    stmt.run({
+      ts: reset.ts,
+      prev_used_percent: reset.prev_used_percent ?? null,
+      prev_resets_at: reset.prev_resets_at ?? null,
+      new_resets_at: reset.new_resets_at,
+      is_early: reset.is_early ? 1 : 0
+    });
+  }
+
+  public getRecentQuotaResets(limitOrSince?: number | string): QuotaReset[] {
+    if (typeof limitOrSince === 'string') {
+      const stmt = this.db.prepare('SELECT * FROM quota_resets WHERE ts >= ? ORDER BY ts DESC');
+      return stmt.all(limitOrSince) as QuotaReset[];
+    }
+    const limit = typeof limitOrSince === 'number' ? limitOrSince : 10;
+    const stmt = this.db.prepare('SELECT * FROM quota_resets ORDER BY ts DESC LIMIT ?');
+    return stmt.all(limit) as QuotaReset[];
+  }
+
+  public getEarlyResetCount(sinceTs: string): number {
+    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM quota_resets WHERE is_early = 1 AND ts >= ?');
+    const result = stmt.get(sinceTs) as { count: number };
+    return result ? result.count : 0;
+  }
 }
+

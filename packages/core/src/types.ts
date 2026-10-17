@@ -64,6 +64,73 @@ export interface FileOffset {
   last_session_id: string | null;
 }
 
+export interface MeterReading {
+  sessionId?: string;
+  ts: string;
+  usedPercent: number;
+  windowMinutes: number;
+  resetsAt: number;
+  planType?: string;
+}
+
+export interface TaskLifecycleEvent {
+  type: 'task_started' | 'task_complete';
+  turnId?: string;
+  sessionId?: string;
+  ts: string;
+  startedAt?: number;
+  completedAt?: number;
+  durationMs?: number;
+}
+
+export interface MeterSnapshot {
+  id?: number;
+  session_id?: string | null;
+  ts: string;
+  used_percent: number;
+  window_minutes: number;
+  resets_at: number;
+  plan_type?: string | null;
+}
+
+export interface QuotaReset {
+  id?: number;
+  ts: string;
+  prev_used_percent: number | null;
+  prev_resets_at: number | null;
+  new_resets_at: number;
+  is_early: number; // 0 or 1
+}
+
+export interface MeterStatus {
+  usedPercent: number;
+  windowMinutes: number;
+  resetsAt: number;
+  planType: string;
+  timeToResetFormatted: string;
+  percentBar: string;
+  earlyResetsCount: number;
+  earlyResetsNote?: string;
+  projectedExhaustionHours?: number;
+  projectedExhaustionText?: string;
+  activeModel?: string | null;
+  modelBadgeText?: string;
+}
+
+export interface UserRequestCost {
+  turnId: string;
+  startTs: string;
+  completeTs: string;
+  startUsedPercent: number;
+  endUsedPercent: number;
+  deltaPercent: number;
+  costDisplay: string;
+  spannedReset: boolean;
+  model?: string | null;
+  callsCount: number;
+  tokensCount: number;
+}
+
 export interface ParseResult {
   session?: Partial<Session>;
   turns: Turn[];
@@ -74,6 +141,8 @@ export interface ParseResult {
   userMessagesCount?: number;
   modelCallsCount?: number;
   compactionsCount?: number;
+  meterReadings?: MeterReading[];
+  taskEvents?: TaskLifecycleEvent[];
 }
 
 export interface TurnEventPayload {
@@ -81,4 +150,7 @@ export interface TurnEventPayload {
   turn: Turn;
   turnIndex: number;
   isNewTurn: boolean;
+  requestCost?: UserRequestCost;
+  meterStatus?: MeterStatus;
 }
+

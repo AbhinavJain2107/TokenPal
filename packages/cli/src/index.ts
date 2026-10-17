@@ -10,7 +10,9 @@ import {
   CodexAdapter,
   RulesEngine,
   loadRuleThresholds,
-  generateLayerAHandoff
+  generateLayerAHandoff,
+  MeterAlertManager,
+  OverlayLauncher
 } from '@tokenpal/core';
 
 
@@ -23,11 +25,12 @@ program
 
 program
   .command('watch')
-  .description('Watch agent sessions and display context size, token metrics, and proactive alerts')
+  .description('Watch agent sessions and display context size, token metrics, rate limits meter, and proactive alerts')
   .option('-d, --dir <path>', 'Custom directory to watch for session logs')
   .option('--db <path>', 'Path to SQLite database', path.join(os.homedir(), '.tokenpal', 'tokenpal.sqlite'))
   .option('--config <path>', 'Path to custom config.json')
-  .option('--no-ui', 'Run in terminal-only mode without desktop overlay', true)
+  .option('--ui', 'Launch desktop overlay mascot (defaults to terminal-only if omitted)')
+  .option('--legacy-rules', 'Enable retired context growth alerts (off by default)')
   .action(async (options) => {
     // Ensure db directory exists
     const dbDir = path.dirname(options.db);
@@ -40,23 +43,119 @@ program
     const db = new TokenPalDatabase(options.db);
     const customDirs = options.dir ? [path.resolve(options.dir)] : [];
     const watcher = new SessionWatcher({ db, customDirs, pollIntervalMs: 1000 });
+    const alertManager = new MeterAlertManager();
+    const launcher = options.ui ? new OverlayLauncher() : null;
 
     console.log('='.repeat(75));
-    console.log(' TokenPal Guardian Watcher started (M2 Rules Engine Active)');
+    console.log(' TokenPal Guardian Watcher started (Rate Limit Meter Redesign Active)');
     console.log(` Watching directories : ${watcher.getWatchDirs().join(', ')}`);
     console.log(` Database             : ${options.db}`);
-    console.log(` Context Growth Limit : ${thresholds.contextGrowthMultiplier}x / ${thresholds.contextMaxTokens.toLocaleString()} tokens`);
-    console.log(` Turn Count Limit     : ${thresholds.turnCountMax} turns`);
+    console.log(' Active Alerts        : Projected exhaustion before reset | Single request > 3%');
+    console.log(' Cooldown             : Once per hour per alert type');
     console.log('='.repeat(75));
+
+    // Show initial meter snapshot if present in database
+    const initialSnapshot = db.getLatestMeterSnapshot();
+    if (initialSnapshot) {
+      const initialStatus = watcher.getMeterReader().getMeterStatus();
+      if (initialStatus) {
+        console.log(`\n[METER] ${initialStatus.percentBar} | Resets in ${initialStatus.timeToResetFormatted} | Plan: ${initialStatus.planType}`);
+        if (initialStatus.earlyResetsNote) {
+          console.log(`        ⚠️  ${initialStatus.earlyResetsNote}`);
+        }
+        if (initialStatus.projectedExhaustionText) {
+          console.log(`        ⏳ ${initialStatus.projectedExhaustionText}`);
+        }
+        if (initialStatus.modelBadgeText) {
+          console.log(`        💡 ${initialStatus.modelBadgeText}`);
+        }
+        console.log('');
+      }
+    }
+
     console.log('Listening for session turns in real time...\n');
 
+    // Rate limit meter update listener
+    watcher.on('meter', (status) => {
+      console.log(`[METER] ${status.percentBar} | Resets in ${status.timeToResetFormatted} | Plan: ${status.planType}`);
+      if (status.earlyResetsNote) {
+        console.log(`        ⚠️  ${status.earlyResetsNote}`);
+      }
+      if (status.projectedExhaustionText) {
+        console.log(`        ⏳ ${status.projectedExhaustionText}`);
+      }
+
+      // Check projected exhaustion alert
+      const alert = alertManager.checkProjectedExhaustion(status);
+      if (alert) {
+        console.log(`\n  🚨 ALERT [${alert.rule}]`);
+        console.log(`  Reason : ${alert.reason}`);
+        console.log(`  Action : ${alert.advice}\n`);
+
+        db.insertAlert({
+          id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          session_id: 'meter',
+          ts: new Date().toISOString(),
+          rule: alert.rule || 'projected_exhaustion',
+          severity: alert.state,
+          shown: 1,
+          action_taken: null
+        });
+
+        if (launcher) {
+          launcher.showAlert(alert);
+        }
+      }
+    });
+
+    // Model switch notification (one-time notice, no yellow state)
+    watcher.on('model_switch', ({ notice }) => {
+      console.log(`\n[NOTICE] ${notice}\n`);
+    });
+
+    // Quota reset detected
+    watcher.on('quota_reset', (reset) => {
+      const earlyLabel = reset.is_early ? ' (EARLY RESET)' : '';
+      console.log(`\n[RESET] Quota reset detected! Previous: ${reset.prev_used_percent ?? '?'}% -> New: 0%${earlyLabel}\n`);
+    });
+
+    // Request cost measured
+    watcher.on('request_cost', (cost) => {
+      if (cost.spannedReset) {
+        console.log(`[COST] Turn ${cost.turnId}: Skipped (spanned quota reset)`);
+      } else {
+        console.log(
+          `[COST] Turn ${cost.turnId}: ${cost.costDisplay} ` +
+          `(${cost.callsCount} call${cost.callsCount !== 1 ? 's' : ''}, ${cost.tokensCount.toLocaleString()} tokens)`
+        );
+
+        // Check high single request cost alert (> ~3%)
+        const currentStatus = watcher.getMeterReader().getMeterStatus(cost.model);
+        const alert = alertManager.checkRequestCost(cost, currentStatus);
+        if (alert) {
+          console.log(`\n  ⚠️  ALERT [${alert.rule}]`);
+          console.log(`  Reason : ${alert.reason}`);
+          console.log(`  Action : ${alert.advice}\n`);
+
+          db.insertAlert({
+            id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            session_id: 'meter',
+            ts: new Date().toISOString(),
+            rule: alert.rule || 'single_request_high',
+            severity: alert.state,
+            shown: 1,
+            action_taken: null
+          });
+
+          if (launcher) {
+            launcher.showAlert(alert);
+          }
+        }
+      }
+    });
+
     watcher.on('turn', (payload) => {
-      const { session, turn, turnIndex } = payload;
-      const turns = db.getTurns(session.id);
-      const tools = db.getToolEvents(session.id);
-
-      const evalResult = engine.evaluate(session, turns, tools, true);
-
+      const { session, turn, turnIndex, meterStatus } = payload;
       const shortId = session.id.slice(0, 8);
       const model = turn.model || 'unknown';
       const effort = turn.effort ? ` [${turn.effort}]` : '';
@@ -65,32 +164,25 @@ program
       const cachedTok = turn.cached_tokens.toLocaleString();
 
       const timeStr = new Date(turn.ts).toLocaleTimeString();
-      const stateBadge = evalResult.state.toUpperCase().padEnd(6);
+      const meterPart = meterStatus ? ` | Meter: ${Math.round(meterStatus.usedPercent)}%` : '';
 
       console.log(
-        `[${timeStr}] [${stateBadge}] Sess ${shortId} | Turn #${turnIndex.toString().padStart(2)} | ` +
+        `[${timeStr}] Sess ${shortId} | Turn #${turnIndex.toString().padStart(2)} | ` +
         `Model: ${model}${effort} | ` +
         `Context: ${contextSize.padStart(7)} | ` +
         `Cached: ${cachedTok.padStart(6)} | ` +
-        `Out: ${outputTok.padStart(5)}`
+        `Out: ${outputTok.padStart(5)}${meterPart}`
       );
 
-      if (evalResult.shouldAlert && evalResult.primaryAlert) {
-        const alert = evalResult.primaryAlert;
-        const icon = alert.severity === 'red' ? '🚨 RED ALERT' : '⚠️ HEAVY THREAD';
-        console.log(`\n  ${icon} [${alert.rule}]`);
-        console.log(`  Reason : ${alert.reason}`);
-        console.log(`  Action : ${alert.advice}\n`);
-
-        db.insertAlert({
-          id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          session_id: session.id,
-          ts: turn.ts,
-          rule: alert.rule,
-          severity: alert.severity,
-          shown: 1,
-          action_taken: null
-        });
+      // Legacy rules check if explicitly enabled
+      if (options.legacyRules) {
+        const turns = db.getTurns(session.id);
+        const tools = db.getToolEvents(session.id);
+        const evalResult = engine.evaluate(session, turns, tools, true);
+        if (evalResult.shouldAlert && evalResult.primaryAlert) {
+          const alert = evalResult.primaryAlert;
+          console.log(`  [Legacy Rule ${alert.rule}] ${alert.reason} -> ${alert.advice}`);
+        }
       }
     });
 
@@ -108,6 +200,9 @@ program
     process.on('SIGINT', () => {
       console.log('\nStopping TokenPal watcher...');
       watcher.stop();
+      if (launcher) {
+        launcher.close();
+      }
       db.close();
       process.exit(0);
     });
