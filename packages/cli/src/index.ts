@@ -12,7 +12,8 @@ import {
   loadRuleThresholds,
   generateLayerAHandoff,
   MeterAlertManager,
-  OverlayLauncher
+  OverlayLauncher,
+  readLatestMeterStatus
 } from '@tokenpal/core';
 
 
@@ -325,6 +326,61 @@ program
     console.log('\n' + '='.repeat(60));
     console.log(result.markdown);
     console.log('='.repeat(60));
+  });
+
+program
+  .command('status')
+  .description('Print current rate limit meter status once (percent, countdown, plan, resets) read from latest session event')
+  .option('-d, --dir <path>', 'Custom directory containing agent session logs (defaults to ~/.codex/sessions)')
+  .option('--db <path>', 'Path to SQLite database', path.join(os.homedir(), '.tokenpal', 'tokenpal.sqlite'))
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (options) => {
+    let db: TokenPalDatabase | undefined;
+    if (options.db) {
+      const dbDir = path.dirname(options.db);
+      if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true });
+      }
+      db = new TokenPalDatabase(options.db);
+    }
+
+    const sessionsDir = options.dir ? path.resolve(options.dir) : undefined;
+    const status = await readLatestMeterStatus({ sessionsDir, db });
+
+    if (!status) {
+      console.log('No rate limit meter events found.');
+      if (db) db.close();
+      return;
+    }
+
+    if (options.json) {
+      console.log(JSON.stringify(status, null, 2));
+      if (db) db.close();
+      return;
+    }
+
+    const lastResetDisplay = status.lastReset
+      ? `${status.lastReset.ts} (from ${status.lastReset.prevUsedPercent ?? '?'}% to 0%, early: ${status.lastReset.isEarly ? 'yes' : 'no'})`
+      : 'None recorded';
+
+    const earlyResetDisplay = status.earlyResetsCount > 0
+      ? `${status.earlyResetsCount} in the last 7 days`
+      : '0';
+
+    console.log('TokenPal Meter Status:');
+    console.log(`  Quota Used       : ${status.percentBar}`);
+    console.log(`  Time to Reset    : ${status.timeToResetFormatted} (resets at ${status.resetsAtIso})`);
+    console.log(`  Plan Type        : ${status.planType}`);
+    console.log(`  Last Reset       : ${lastResetDisplay}`);
+    console.log(`  Early Resets     : ${earlyResetDisplay}`);
+    if (status.projectedExhaustionText) {
+      console.log(`  Projection       : ${status.projectedExhaustionText}`);
+    }
+    if (status.modelBadgeText) {
+      console.log(`  Model Note       : ${status.modelBadgeText}`);
+    }
+
+    if (db) db.close();
   });
 
 program.parse(process.argv);

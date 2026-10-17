@@ -8,6 +8,7 @@ import { calculateProjection } from '../src/meter/projection.js';
 import { RequestCostTracker } from '../src/meter/request-cost.js';
 import { MeterAlertManager } from '../src/meter/alerts.js';
 import { CodexAdapter } from '../src/adapters/codex.js';
+import { readLatestMeterStatus } from '../src/meter/status.js';
 import { MeterReading, MeterSnapshot } from '../src/types.js';
 
 describe('Rate Limit Meter Redesign', () => {
@@ -45,6 +46,56 @@ describe('Rate Limit Meter Redesign', () => {
       expect(latest).toBeDefined();
       expect(latest?.used_percent).toBe(25);
       expect(latest?.plan_type).toBe('prolite');
+    });
+
+    it('stores a snapshot only when used_percent, resets_at, or plan_type changes', () => {
+      const reader = new MeterReader(db);
+      // Initial reading writes snapshot
+      const r1 = reader.processReading({
+        sessionId: 'sess-1',
+        ts: '2026-10-16T10:00:00Z',
+        usedPercent: 20,
+        windowMinutes: 10080,
+        resetsAt: 1792740000,
+        planType: 'prolite'
+      });
+      expect(r1.snapshotStored).toBe(true);
+
+      // Duplicate reading with identical values does NOT write snapshot
+      const r2 = reader.processReading({
+        sessionId: 'sess-1',
+        ts: '2026-10-16T10:01:00Z',
+        usedPercent: 20,
+        windowMinutes: 10080,
+        resetsAt: 1792740000,
+        planType: 'prolite'
+      });
+      expect(r2.snapshotStored).toBe(false);
+
+      // Changed used_percent writes snapshot
+      const r3 = reader.processReading({
+        sessionId: 'sess-1',
+        ts: '2026-10-16T10:02:00Z',
+        usedPercent: 22,
+        windowMinutes: 10080,
+        resetsAt: 1792740000,
+        planType: 'prolite'
+      });
+      expect(r3.snapshotStored).toBe(true);
+
+      // Changed plan_type writes snapshot
+      const r4 = reader.processReading({
+        sessionId: 'sess-1',
+        ts: '2026-10-16T10:03:00Z',
+        usedPercent: 22,
+        windowMinutes: 10080,
+        resetsAt: 1792740000,
+        planType: 'pro'
+      });
+      expect(r4.snapshotStored).toBe(true);
+
+      const allSnapshots = db.getRecentMeterSnapshots('2026-10-16T00:00:00Z', 100);
+      expect(allSnapshots.length).toBe(3);
     });
 
     it('ignores small downward jitter (1-2 points) when resets_at is unchanged and value > 0', () => {
@@ -356,6 +407,80 @@ describe('Rate Limit Meter Redesign', () => {
       }
 
       expect(resetObserved).toBe(true);
+    });
+  });
+
+  describe('8. Status Reader Integration', () => {
+    it('returns null when directory does not exist or has no session files', async () => {
+      const nonExistentDir = path.join(tempDir, 'does-not-exist');
+      const status = await readLatestMeterStatus({ sessionsDir: nonExistentDir, db });
+      expect(status).toBeNull();
+    });
+
+    it('reads the latest meter event, resets, and early-reset counts from session files', async () => {
+      const sessionsDir = path.join(tempDir, 'sessions');
+      fs.mkdirSync(sessionsDir, { recursive: true });
+
+      // Create session file 1 with an initial reading and an early reset
+      const file1 = path.join(sessionsDir, 'rollout-2026-10-15T10-00-00-test1.jsonl');
+      const lines1 = [
+        JSON.stringify({ type: 'session_meta', payload: { session_id: 's-1' } }),
+        JSON.stringify({
+          type: 'event_msg',
+          timestamp: '2026-10-15T10:00:00.000Z',
+          payload: {
+            type: 'token_count',
+            rate_limits: {
+              primary: { used_percent: 85, window_minutes: 10080, resets_at: 1792582594 },
+              plan_type: 'prolite'
+            }
+          }
+        }),
+        // Early reset to 0 with new window resets_at
+        JSON.stringify({
+          type: 'event_msg',
+          timestamp: '2026-10-15T12:00:00.000Z',
+          payload: {
+            type: 'token_count',
+            rate_limits: {
+              primary: { used_percent: 0, window_minutes: 10080, resets_at: 1792649587 },
+              plan_type: 'prolite'
+            }
+          }
+        })
+      ];
+      fs.writeFileSync(file1, lines1.join('\n'));
+
+      // Create session file 2 with latest progress
+      const file2 = path.join(sessionsDir, 'rollout-2026-10-16T08-00-00-test2.jsonl');
+      const lines2 = [
+        JSON.stringify({ type: 'session_meta', payload: { session_id: 's-2' } }),
+        JSON.stringify({
+          type: 'event_msg',
+          timestamp: '2026-10-16T08:00:00.000Z',
+          payload: {
+            type: 'token_count',
+            rate_limits: {
+              primary: { used_percent: 12, window_minutes: 10080, resets_at: 1792649587 },
+              plan_type: 'prolite'
+            }
+          }
+        })
+      ];
+      fs.writeFileSync(file2, lines2.join('\n'));
+
+      const status = await readLatestMeterStatus({ sessionsDir, db });
+      expect(status).not.toBeNull();
+      expect(status!.usedPercent).toBe(12);
+      expect(status!.planType).toBe('prolite');
+      expect(status!.resetsAtEpochSec).toBe(1792649587);
+      expect(status!.resetsAtIso).toBe(new Date(1792649587 * 1000).toISOString());
+      expect(status!.lastReset).not.toBeNull();
+      expect(status!.lastReset?.prevUsedPercent).toBe(85);
+      expect(status!.lastReset?.isEarly).toBe(true);
+      expect(status!.earlyResetsCount).toBe(1);
+      expect(status!.latestEventTs).toBe('2026-10-16T08:00:00.000Z');
+      expect(status!.sessionsScannedCount).toBe(2);
     });
   });
 });

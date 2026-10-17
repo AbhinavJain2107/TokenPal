@@ -41,8 +41,8 @@ export class MeterAlertManager {
     return {
       state: 'yellow',
       rule: 'projected_exhaustion',
-      reason: `Projected quota exhaustion in ~${timeDisplay} (before next reset in ${status.timeToResetFormatted})`,
-      advice: 'Pace remaining tasks or avoid long multi-turn exploration.',
+      reason: `Projected quota exhaustion in ~${timeDisplay} (before next reset in ${status.timeToResetFormatted}; note: meter covers all concurrent sessions)`,
+      advice: 'Pace remaining tasks or conclude long threads. Note: meter reflects usage across all active sessions.',
       meter: {
         usedPercent: status.usedPercent,
         timeToResetFormatted: status.timeToResetFormatted,
@@ -71,8 +71,8 @@ export class MeterAlertManager {
     return {
       state: 'yellow',
       rule: 'single_request_high',
-      reason: `Single request consumed about +${Math.round(cost.deltaPercent)}% of quota`,
-      advice: 'Break large prompts or heavy tool chains into smaller turns.',
+      reason: `Single request measured about +${Math.round(cost.deltaPercent)}% meter change (note: meter covers all sessions; jump may not come from this request alone)`,
+      advice: 'Break large prompts into smaller tasks. Note: the meter is shared across all sessions.',
       meter: status ? {
         usedPercent: status.usedPercent,
         timeToResetFormatted: status.timeToResetFormatted,

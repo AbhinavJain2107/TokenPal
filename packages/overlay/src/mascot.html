@@ -98,11 +98,17 @@
     /* Details Panel */
     .details {
       display: none;
+      flex-direction: column;
       font-size: 10px;
       color: #94a3b8;
       border-top: 1px solid rgba(255, 255, 255, 0.1);
       padding-top: 6px;
       gap: 4px;
+      max-height: 130px;
+      overflow-y: auto;
+    }
+    .detail-item {
+      line-height: 1.3;
     }
 
     /* Mascot Character Container */
@@ -135,38 +141,43 @@
   <div class="bubble" id="bubble">
     <div class="bubble-header">
       <span id="badge" class="badge-green">● HEALTHY</span>
-      <span id="ruleName" style="opacity: 0.6;"></span>
-      <span id="planBadge" style="margin-left: auto; font-size: 10px; opacity: 0.7; text-transform: uppercase;"></span>
+      <span id="ruleName" style="opacity: 0.6; font-size: 10px;"></span>
+      <span id="meterPercentText" style="margin-left: auto; font-weight: 700; font-size: 13px;">0%</span>
     </div>
 
-    <!-- Meter Section -->
-    <div id="meterSection" style="display: flex; flex-direction: column; gap: 4px;">
-      <div style="display: flex; justify-content: space-between; font-size: 11px;">
-        <span id="meterPercentText" style="font-weight: 700;">0%</span>
-        <span id="timeToReset" style="color: #94a3b8;">Resets in -</span>
-      </div>
+    <!-- Meter Bar and Countdown -->
+    <div id="meterBarContainer" style="display: flex; flex-direction: column; gap: 3px;">
       <div style="height: 6px; background: rgba(255, 255, 255, 0.15); border-radius: 3px; overflow: hidden;">
         <div id="meterBarFill" style="height: 100%; width: 0%; background: #3b82f6; border-radius: 3px; transition: width 0.3s ease;"></div>
       </div>
-      <div id="earlyResetsNote" style="display: none; font-size: 10px; color: #f59e0b;"></div>
-      <div id="projectionNote" style="display: none; font-size: 10px; color: #fbbf24;"></div>
-      <div id="modelBadge" style="display: none; font-size: 10px; color: #93c5fd;"></div>
-      <div id="requestCost" style="display: none; font-size: 10px; color: #a7f3d0;"></div>
+      <div style="display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8;">
+        <span id="timeToReset">Resets in -</span>
+        <span id="planBadge" style="text-transform: uppercase;"></span>
+      </div>
     </div>
 
-    <div class="bubble-reason" id="reason" style="display: none;"></div>
-    <div class="bubble-advice" id="advice" style="display: none;"></div>
+    <!-- Exactly ONE alert line by default -->
+    <div class="bubble-reason" id="alertLine">Quota is healthy</div>
 
+    <!-- Actions (Compact) -->
     <div class="bubble-actions">
-      <button class="primary" id="btnHandoff">Copy Handoff</button>
+      <button id="btnDetails">Details ▾</button>
       <button id="btnSnooze">Snooze 30m</button>
       <button id="btnDismiss">Dismiss</button>
-      <button id="btnDetails">Details</button>
     </div>
 
+    <!-- Details Panel (hidden by default) -->
     <div class="details" id="detailsPanel">
-      <div>Context: <span id="detContext">0</span> tokens</div>
-      <div>Turn: <span id="detTurn">0</span> | Model: <span id="detModel">-</span></div>
+      <div id="advice" class="bubble-advice" style="display: none; margin-bottom: 4px;"></div>
+      <div id="earlyResetsNote" class="detail-item" style="display: none; color: #f59e0b;"></div>
+      <div id="projectionNote" class="detail-item" style="display: none; color: #fbbf24;"></div>
+      <div id="modelBadge" class="detail-item" style="display: none; color: #93c5fd;"></div>
+      <div id="requestCost" class="detail-item" style="display: none; color: #a7f3d0;"></div>
+      <div class="detail-item">Context: <span id="detContext">0</span> tokens | Turn: <span id="detTurn">0</span></div>
+      <div class="detail-item">Model: <span id="detModel">-</span></div>
+      <div style="margin-top: 6px;">
+        <button class="primary" id="btnHandoff" style="width: 100%;">Copy Handoff</button>
+      </div>
     </div>
   </div>
 
@@ -204,18 +215,18 @@
     const badge = document.getElementById('badge');
     const ruleName = document.getElementById('ruleName');
     const planBadge = document.getElementById('planBadge');
-    const meterSection = document.getElementById('meterSection');
     const meterPercentText = document.getElementById('meterPercentText');
     const timeToReset = document.getElementById('timeToReset');
     const meterBarFill = document.getElementById('meterBarFill');
+    const alertLine = document.getElementById('alertLine');
+
+    const btnDetails = document.getElementById('btnDetails');
+    const detailsPanel = document.getElementById('detailsPanel');
+    const advice = document.getElementById('advice');
     const earlyResetsNote = document.getElementById('earlyResetsNote');
     const projectionNote = document.getElementById('projectionNote');
     const modelBadge = document.getElementById('modelBadge');
     const requestCost = document.getElementById('requestCost');
-
-    const reason = document.getElementById('reason');
-    const advice = document.getElementById('advice');
-    const detailsPanel = document.getElementById('detailsPanel');
     const detContext = document.getElementById('detContext');
     const detTurn = document.getElementById('detTurn');
     const detModel = document.getElementById('detModel');
@@ -280,7 +291,7 @@
       currentState = payload.state || 'green';
 
       badge.className = `badge-${currentState}`;
-      badge.textContent = payload.rule ? `● ${currentState.toUpperCase()}` : '● METER';
+      badge.textContent = payload.rule ? `● ${currentState.toUpperCase()}` : '● HEALTHY';
       ruleName.textContent = payload.rule ? `[${payload.rule}]` : '';
 
       if (payload.meter) {
@@ -301,42 +312,48 @@
 
         planBadge.textContent = payload.meter.planType || '';
 
+        // Details Panel Items
         if (payload.meter.earlyResetsNote) {
-          earlyResetsNote.textContent = payload.meter.earlyResetsNote;
+          earlyResetsNote.textContent = `⚠️ ${payload.meter.earlyResetsNote}`;
           earlyResetsNote.style.display = 'block';
         } else {
           earlyResetsNote.style.display = 'none';
         }
 
         if (payload.meter.projectedExhaustionText) {
-          projectionNote.textContent = payload.meter.projectedExhaustionText;
+          projectionNote.textContent = `⏳ ${payload.meter.projectedExhaustionText}`;
           projectionNote.style.display = 'block';
         } else {
           projectionNote.style.display = 'none';
         }
 
         if (payload.meter.modelBadgeText) {
-          modelBadge.textContent = payload.meter.modelBadgeText;
+          modelBadge.textContent = `💡 ${payload.meter.modelBadgeText}`;
           modelBadge.style.display = 'block';
         } else {
           modelBadge.style.display = 'none';
         }
 
         if (payload.meter.requestCostDisplay) {
-          requestCost.textContent = `Last request: ${payload.meter.requestCostDisplay}`;
+          requestCost.textContent = `📊 Last request: ${payload.meter.requestCostDisplay}`;
           requestCost.style.display = 'block';
         } else {
           requestCost.style.display = 'none';
         }
       }
 
-      if (payload.rule) {
-        reason.textContent = payload.reason || '';
-        reason.style.display = 'block';
-        advice.textContent = payload.advice || '';
+      // Exactly ONE alert line by default
+      if (payload.rule && payload.reason) {
+        alertLine.textContent = payload.reason;
+      } else {
+        alertLine.textContent = 'Quota is healthy · No alerts';
+      }
+
+      // Advice placed inside details panel
+      if (payload.advice) {
+        advice.textContent = `Action: ${payload.advice}`;
         advice.style.display = 'block';
       } else {
-        reason.style.display = 'none';
         advice.style.display = 'none';
       }
 
@@ -363,9 +380,10 @@
       ipcRenderer.send('action:dismiss');
     });
 
-    document.getElementById('btnDetails').addEventListener('click', () => {
+    btnDetails.addEventListener('click', () => {
       const isVisible = detailsPanel.style.display === 'flex';
       detailsPanel.style.display = isVisible ? 'none' : 'flex';
+      btnDetails.textContent = isVisible ? 'Details ▾' : 'Details ▴';
     });
 
     // IPC from Main Process

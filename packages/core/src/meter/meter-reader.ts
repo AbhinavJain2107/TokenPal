@@ -123,16 +123,26 @@ export class MeterReader {
 
     // Normal progression in same window
     if (reading.usedPercent >= this.latestReading.usedPercent) {
+      const hasChanged =
+        reading.usedPercent !== this.latestReading.usedPercent ||
+        reading.resetsAt !== this.latestReading.resetsAt ||
+        (reading.planType !== undefined && reading.planType !== this.latestReading.planType);
+
       this.latestReading = reading;
-      this.db.insertMeterSnapshot({
-        session_id: reading.sessionId,
-        ts: reading.ts,
-        used_percent: reading.usedPercent,
-        window_minutes: reading.windowMinutes,
-        resets_at: reading.resetsAt,
-        plan_type: reading.planType
-      });
-      return { snapshotStored: true, resetDetected: false };
+
+      if (hasChanged) {
+        this.db.insertMeterSnapshot({
+          session_id: reading.sessionId,
+          ts: reading.ts,
+          used_percent: reading.usedPercent,
+          window_minutes: reading.windowMinutes,
+          resets_at: reading.resetsAt,
+          plan_type: reading.planType
+        });
+        return { snapshotStored: true, resetDetected: false };
+      }
+
+      return { snapshotStored: false, resetDetected: false };
     }
 
     // Downward movement: if 1 to 2 points jitter, ignore

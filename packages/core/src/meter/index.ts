@@ -3,3 +3,4 @@ export * from './projection.js';
 export * from './request-cost.js';
 export * from './meter-reader.js';
 export * from './alerts.js';
+export * from './status.js';
