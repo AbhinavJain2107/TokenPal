@@ -4,30 +4,60 @@ TokenPal is a lightweight local monitor and desktop guardian for AI coding agent
 
 ---
 
-## Quickstart
+## Setup & Quickstart
 
-Run directly without installation:
+### Clean Clone Setup
+
+TokenPal is a pnpm monorepo requiring Node 20+ and pnpm.
 
 ```bash
-# Start background watcher in terminal mode
-npx tokenpal watch --no-ui
+# 1. Clone repository
+git clone https://github.com/AbhinavJain2107/TokenPal.git
+cd TokenPal
 
-# Watch with the desktop companion overlay enabled
-npx tokenpal watch
+# 2. Install dependencies
+pnpm install
 
-# Replay an existing session to inspect context growth and alerts
-npx tokenpal replay ~/.codex/sessions/2026/10/14/rollout-*.jsonl
+# 3. Build all workspace packages
+pnpm build
 
-# Generate a Layer A handoff summary and copy it to clipboard
-npx tokenpal handoff
+# 4. Run watcher with desktop mascot overlay (defaults to ~/.codex/sessions)
+node packages/cli/dist/index.js watch
+
+# Terminal-only watcher:
+node packages/cli/dist/index.js watch --no-ui
+
+# 5. Check current rate limits meter once
+node packages/cli/dist/index.js status
+
+# 6. Test overlay animations with demo mode (cycles 5 states with fake data, ~5s each)
+node packages/cli/dist/index.js demo
 ```
+
+### Native Build Note (`better-sqlite3`)
+
+TokenPal relies on `better-sqlite3` for high-performance zero-latency local SQLite operations. It compiles native C++ bindings upon install.
+
+* **Prerequisites**: Python 3 and a C++ compiler toolchain:
+  * **macOS**: `xcode-select --install`
+  * **Linux (Ubuntu/Debian)**: `sudo apt install build-essential python3`
+  * **Windows**: Visual Studio C++ Build Tools & Python 3
+* **If installation fails or sqlite bindings are missing**:
+  ```bash
+  pnpm rebuild better-sqlite3
+  ```
+* **If Electron reports a `NODE_MODULE_VERSION` mismatch**:
+  The watcher process uses Node's native module while the Electron overlay communicates via JSON IPC over stdin/stdout. If running native SQLite directly in Electron, rebuild bindings:
+  ```bash
+  npx electron-rebuild -f -w better-sqlite3
+  ```
 
 ---
 
 ## CLI Commands
 
 ### 1. `tokenpal watch`
-Monitors session logs in real time using stored file offsets. Emits turn updates with context size (input tokens), cached token counts, output tokens, and fires alerts when threads become heavy or expensive.
+Monitors session logs in real time using stored file offsets. Emits turn updates with context size (input tokens), cached token counts, output tokens, rate limits meter with countdown, and proactive alerts.
 
 ```bash
 tokenpal watch [options]
@@ -37,14 +67,31 @@ tokenpal watch [options]
   --no-ui              Terminal-only mode without desktop overlay
 ```
 
-### 2. `tokenpal replay <file>`
+### 2. `tokenpal status`
+Prints the current rate limits meter once (percent, local reset countdown & timestamp, plan, last reset in local time, and early-reset count) read directly from the latest session event in `~/.codex/sessions`. Zero message text.
+
+```bash
+tokenpal status [options]
+  -d, --dir <path>     Directory containing session logs (default: ~/.codex/sessions)
+  --db <path>          Path to SQLite database (default: ~/.tokenpal/tokenpal.sqlite)
+  --json               Output machine-readable JSON (preserves UTC ISO timestamps)
+```
+
+### 3. `tokenpal demo`
+Opens the desktop mascot overlay once and automatically cycles through every guardian state (Healthy, Projected Exhaustion, Single High Request, Astra Badge, and Stale Reading) using fake data (~5 seconds each), then exits cleanly. Performs zero file reads.
+
+```bash
+tokenpal demo
+```
+
+### 4. `tokenpal replay <file>`
 Parses a past `.jsonl` session file from start to finish, evaluating rules at each turn and displaying a breakdown of context growth, cached tokens, and a Triggered Alerts Summary.
 
 ```bash
 tokenpal replay <session-file.jsonl>
 ```
 
-### 3. `tokenpal handoff`
+### 5. `tokenpal handoff`
 Extracts factual state from git (`git branch`, last commit, `git status`, `git diff --stat`) and recent session test/lint logs, formats a concise markdown handoff under 60 lines, saves to `.handoff/latest.md`, and copies it to your clipboard.
 
 ```bash

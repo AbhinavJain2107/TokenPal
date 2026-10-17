@@ -142,6 +142,7 @@
     <div class="bubble-header">
       <span id="badge" class="badge-green">● HEALTHY</span>
       <span id="ruleName" style="opacity: 0.6; font-size: 10px;"></span>
+      <span id="planBadge" style="margin-left: 6px; font-size: 9px; opacity: 0.7; text-transform: uppercase;"></span>
       <span id="meterPercentText" style="margin-left: auto; font-weight: 700; font-size: 13px;">0%</span>
     </div>
 
@@ -152,7 +153,7 @@
       </div>
       <div style="display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8;">
         <span id="timeToReset">Resets in -</span>
-        <span id="planBadge" style="text-transform: uppercase;"></span>
+        <span id="asOfTime">as of -</span>
       </div>
     </div>
 
@@ -168,11 +169,14 @@
 
     <!-- Details Panel (hidden by default) -->
     <div class="details" id="detailsPanel">
+      <div id="staleDetail" class="detail-item" style="display: none; color: #f59e0b;"></div>
       <div id="advice" class="bubble-advice" style="display: none; margin-bottom: 4px;"></div>
       <div id="earlyResetsNote" class="detail-item" style="display: none; color: #f59e0b;"></div>
       <div id="projectionNote" class="detail-item" style="display: none; color: #fbbf24;"></div>
       <div id="modelBadge" class="detail-item" style="display: none; color: #93c5fd;"></div>
       <div id="requestCost" class="detail-item" style="display: none; color: #a7f3d0;"></div>
+      <div class="detail-item">Resets at: <span id="detResetTime">-</span></div>
+      <div class="detail-item">Last meter update: <span id="detAsOfTime">-</span></div>
       <div class="detail-item">Context: <span id="detContext">0</span> tokens | Turn: <span id="detTurn">0</span></div>
       <div class="detail-item">Model: <span id="detModel">-</span></div>
       <div style="margin-top: 6px;">
@@ -217,16 +221,20 @@
     const planBadge = document.getElementById('planBadge');
     const meterPercentText = document.getElementById('meterPercentText');
     const timeToReset = document.getElementById('timeToReset');
+    const asOfTime = document.getElementById('asOfTime');
     const meterBarFill = document.getElementById('meterBarFill');
     const alertLine = document.getElementById('alertLine');
 
     const btnDetails = document.getElementById('btnDetails');
     const detailsPanel = document.getElementById('detailsPanel');
+    const staleDetail = document.getElementById('staleDetail');
     const advice = document.getElementById('advice');
     const earlyResetsNote = document.getElementById('earlyResetsNote');
     const projectionNote = document.getElementById('projectionNote');
     const modelBadge = document.getElementById('modelBadge');
     const requestCost = document.getElementById('requestCost');
+    const detResetTime = document.getElementById('detResetTime');
+    const detAsOfTime = document.getElementById('detAsOfTime');
     const detContext = document.getElementById('detContext');
     const detTurn = document.getElementById('detTurn');
     const detModel = document.getElementById('detModel');
@@ -306,13 +314,40 @@
           meterBarFill.style.background = '#3b82f6';
         }
 
-        timeToReset.textContent = payload.meter.timeToResetFormatted
-          ? `Resets in ${payload.meter.timeToResetFormatted}`
-          : 'Resets in -';
+        if (payload.meter.resetsAtLocal && payload.meter.timeToResetFormatted) {
+          timeToReset.textContent = `Resets in ${payload.meter.timeToResetFormatted} (${payload.meter.resetsAtLocal})`;
+        } else if (payload.meter.timeToResetFormatted) {
+          timeToReset.textContent = `Resets in ${payload.meter.timeToResetFormatted}`;
+        } else {
+          timeToReset.textContent = 'Resets in -';
+        }
+
+        if (payload.meter.asOfLocal) {
+          asOfTime.textContent = payload.meter.isStale
+            ? `as of ${payload.meter.asOfLocal} (STALE)`
+            : `as of ${payload.meter.asOfLocal}`;
+          asOfTime.style.color = payload.meter.isStale ? '#f59e0b' : '#94a3b8';
+        } else {
+          asOfTime.textContent = '';
+        }
 
         planBadge.textContent = payload.meter.planType || '';
 
         // Details Panel Items
+        if (payload.meter.isStale) {
+          staleDetail.textContent = `⚠️ Stale reading: ${payload.meter.staleReason || 'Older than 30m or reset passed'}`;
+          staleDetail.style.display = 'block';
+        } else {
+          staleDetail.style.display = 'none';
+        }
+
+        if (payload.meter.resetsAtLocal) {
+          detResetTime.textContent = payload.meter.resetsAtLocal;
+        }
+        if (payload.meter.asOfLocal) {
+          detAsOfTime.textContent = payload.meter.asOfLocal;
+        }
+
         if (payload.meter.earlyResetsNote) {
           earlyResetsNote.textContent = `⚠️ ${payload.meter.earlyResetsNote}`;
           earlyResetsNote.style.display = 'block';
@@ -345,6 +380,12 @@
       // Exactly ONE alert line by default
       if (payload.rule && payload.reason) {
         alertLine.textContent = payload.reason;
+      } else if (payload.meter?.isStale) {
+        badge.className = 'badge-yellow';
+        badge.textContent = '● STALE';
+        alertLine.textContent = payload.meter.staleReason
+          ? `⚠️ Stale reading: ${payload.meter.staleReason}`
+          : '⚠️ Stale meter reading (>30m old)';
       } else {
         alertLine.textContent = 'Quota is healthy · No alerts';
       }

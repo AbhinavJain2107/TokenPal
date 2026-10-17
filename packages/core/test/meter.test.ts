@@ -3,12 +3,19 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { TokenPalDatabase } from '../src/db/database.js';
-import { MeterReader, formatPercentBar, formatRemainingTime } from '../src/meter/meter-reader.js';
+import {
+  MeterReader,
+  formatPercentBar,
+  formatRemainingTime,
+  formatLocalTime,
+  isMeterReadingStale
+} from '../src/meter/meter-reader.js';
 import { calculateProjection } from '../src/meter/projection.js';
 import { RequestCostTracker } from '../src/meter/request-cost.js';
 import { MeterAlertManager } from '../src/meter/alerts.js';
 import { CodexAdapter } from '../src/adapters/codex.js';
 import { readLatestMeterStatus } from '../src/meter/status.js';
+import { getDemoStates } from '../src/overlay/demo.js';
 import { MeterReading, MeterSnapshot } from '../src/types.js';
 
 describe('Rate Limit Meter Redesign', () => {
@@ -474,13 +481,92 @@ describe('Rate Limit Meter Redesign', () => {
       expect(status!.usedPercent).toBe(12);
       expect(status!.planType).toBe('prolite');
       expect(status!.resetsAtEpochSec).toBe(1792649587);
-      expect(status!.resetsAtIso).toBe(new Date(1792649587 * 1000).toISOString());
+      expect(status!.resetsAtLocal).toBe(new Date(1792649587 * 1000).toLocaleString());
+      expect(status!.asOfLocal).toBe(new Date('2026-10-16T08:00:00.000Z').toLocaleString());
       expect(status!.lastReset).not.toBeNull();
       expect(status!.lastReset?.prevUsedPercent).toBe(85);
+      expect(status!.lastReset?.tsLocal).toBe(new Date('2026-10-15T12:00:00.000Z').toLocaleString());
       expect(status!.lastReset?.isEarly).toBe(true);
       expect(status!.earlyResetsCount).toBe(1);
       expect(status!.latestEventTs).toBe('2026-10-16T08:00:00.000Z');
       expect(status!.sessionsScannedCount).toBe(2);
+    });
+  });
+
+  describe('9. Staleness Detection and Local Time Formatting', () => {
+    it('marks reading as fresh when within 30 minutes and reset is in the future', () => {
+      const nowMs = 1792000000 * 1000;
+      const readingTs = new Date(nowMs - 10 * 60 * 1000).toISOString(); // 10m ago
+      const resetsAt = Math.floor(nowMs / 1000) + 86400; // tomorrow
+
+      const check = isMeterReadingStale(readingTs, resetsAt, nowMs);
+      expect(check.isStale).toBe(false);
+      expect(check.reason).toBeUndefined();
+    });
+
+    it('marks reading as stale when older than 30 minutes', () => {
+      const nowMs = 1792000000 * 1000;
+      const readingTs = new Date(nowMs - 35 * 60 * 1000).toISOString(); // 35m ago
+      const resetsAt = Math.floor(nowMs / 1000) + 86400; // tomorrow
+
+      const check = isMeterReadingStale(readingTs, resetsAt, nowMs);
+      expect(check.isStale).toBe(true);
+      expect(check.reason).toContain('older than 30 minutes');
+    });
+
+    it('marks reading as stale when resets_at is already in the past', () => {
+      const nowMs = 1792000000 * 1000;
+      const readingTs = new Date(nowMs - 5 * 60 * 1000).toISOString(); // 5m ago
+      const resetsAt = Math.floor(nowMs / 1000) - 60; // 1 minute in the past
+
+      const check = isMeterReadingStale(readingTs, resetsAt, nowMs);
+      expect(check.isStale).toBe(true);
+      expect(check.reason).toContain('reset time has already passed');
+    });
+
+    it('formats local time cleanly from epoch or ISO string', () => {
+      const iso = '2026-10-17T12:00:00.000Z';
+      const localStr = formatLocalTime(iso);
+      expect(localStr).toBe(new Date(iso).toLocaleString());
+
+      const epochSec = 1792740440;
+      const epochLocal = formatLocalTime(epochSec);
+      expect(epochLocal).toBe(new Date(epochSec * 1000).toLocaleString());
+    });
+  });
+
+  describe('10. Overlay Demo States (Zero File Reads)', () => {
+    it('returns exactly 5 demonstration states cycling all guardian conditions', () => {
+      const states = getDemoStates();
+      expect(states.length).toBe(5);
+
+      const names = states.map(s => s.name);
+      expect(names).toEqual([
+        'healthy',
+        'projected_exhaustion',
+        'single_request_high',
+        'astra_badge',
+        'stale_reading'
+      ]);
+
+      // State 1: healthy
+      expect(states[0].payload.state).toBe('green');
+      expect(states[0].payload.meter?.isStale).toBe(false);
+
+      // State 2: projected_exhaustion
+      expect(states[1].payload.state).toBe('yellow');
+      expect(states[1].payload.rule).toBe('projected_exhaustion');
+
+      // State 3: single_request_high
+      expect(states[2].payload.state).toBe('yellow');
+      expect(states[2].payload.rule).toBe('single_request_high');
+
+      // State 4: astra_badge
+      expect(states[3].payload.meter?.modelBadgeText).toContain('Astra');
+
+      // State 5: stale_reading
+      expect(states[4].payload.meter?.isStale).toBe(true);
+      expect(states[4].payload.meter?.staleReason).toContain('30 minutes');
     });
   });
 });

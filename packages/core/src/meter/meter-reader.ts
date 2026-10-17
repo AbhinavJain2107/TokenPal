@@ -25,6 +25,44 @@ export function formatRemainingTime(resetsAtEpochSec: number, currentEpochSec: n
   return `${minutes}m`;
 }
 
+export function formatLocalTime(dateOrEpoch: string | number | Date): string {
+  const d = typeof dateOrEpoch === 'number'
+    ? (dateOrEpoch > 1e11 ? new Date(dateOrEpoch) : new Date(dateOrEpoch * 1000))
+    : new Date(dateOrEpoch);
+  if (isNaN(d.getTime())) return 'unknown';
+  return d.toLocaleString();
+}
+
+export function isMeterReadingStale(
+  readingTs: string,
+  resetsAtEpochSec: number,
+  nowMs: number = Date.now()
+): { isStale: boolean; reason?: string } {
+  const readingMs = new Date(readingTs).getTime();
+  const ageMs = nowMs - readingMs;
+  const nowEpochSec = Math.floor(nowMs / 1000);
+
+  const isResetPassed = nowEpochSec > resetsAtEpochSec;
+  const isOlderThan30m = ageMs > 30 * 60 * 1000;
+
+  if (isResetPassed) {
+    return {
+      isStale: true,
+      reason: 'Quota window reset time has already passed'
+    };
+  }
+
+  if (isOlderThan30m) {
+    const minsOld = Math.round(ageMs / 60000);
+    return {
+      isStale: true,
+      reason: `Meter reading is older than 30 minutes (${minsOld}m ago)`
+    };
+  }
+
+  return { isStale: false };
+}
+
 export class MeterReader {
   private db: TokenPalDatabase;
   private latestReading: MeterReading | null = null;
@@ -188,9 +226,13 @@ export class MeterReader {
     }
 
     const currentEpoch = customNowEpoch ?? Math.floor(Date.now() / 1000);
+    const nowMs = currentEpoch * 1000;
     const reading = this.latestReading;
     const percentBar = formatPercentBar(reading.usedPercent);
     const timeToResetFormatted = formatRemainingTime(reading.resetsAt, currentEpoch);
+    const resetsAtLocal = formatLocalTime(reading.resetsAt);
+    const asOfLocal = formatLocalTime(reading.ts);
+    const staleCheck = isMeterReadingStale(reading.ts, reading.resetsAt, nowMs);
 
     // Count early resets in the last 7 days
     const sevenDaysAgo = new Date((currentEpoch - 7 * 86400) * 1000).toISOString();
@@ -212,6 +254,11 @@ export class MeterReader {
       usedPercent: reading.usedPercent,
       windowMinutes: reading.windowMinutes,
       resetsAt: reading.resetsAt,
+      resetsAtLocal,
+      asOfTs: reading.ts,
+      asOfLocal,
+      isStale: staleCheck.isStale,
+      staleReason: staleCheck.reason,
       planType: reading.planType || 'prolite',
       timeToResetFormatted,
       percentBar,

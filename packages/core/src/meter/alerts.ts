@@ -46,6 +46,10 @@ export class MeterAlertManager {
       meter: {
         usedPercent: status.usedPercent,
         timeToResetFormatted: status.timeToResetFormatted,
+        resetsAtLocal: status.resetsAtLocal,
+        asOfLocal: status.asOfLocal,
+        isStale: status.isStale,
+        staleReason: status.staleReason,
         planType: status.planType,
         percentBar: status.percentBar,
         earlyResetsCount: status.earlyResetsCount,
@@ -76,6 +80,10 @@ export class MeterAlertManager {
       meter: status ? {
         usedPercent: status.usedPercent,
         timeToResetFormatted: status.timeToResetFormatted,
+        resetsAtLocal: status.resetsAtLocal,
+        asOfLocal: status.asOfLocal,
+        isStale: status.isStale,
+        staleReason: status.staleReason,
         planType: status.planType,
         percentBar: status.percentBar,
         earlyResetsCount: status.earlyResetsCount,

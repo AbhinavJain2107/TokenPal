@@ -108,6 +108,11 @@ export interface MeterStatus {
   resetsAt: number;
   planType: string;
   timeToResetFormatted: string;
+  resetsAtLocal?: string;
+  asOfTs?: string;
+  asOfLocal?: string;
+  isStale?: boolean;
+  staleReason?: string;
   percentBar: string;
   earlyResetsCount: number;
   earlyResetsNote?: string;

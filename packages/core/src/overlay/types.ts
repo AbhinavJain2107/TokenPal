@@ -3,6 +3,10 @@ export type OverlayState = 'green' | 'yellow' | 'red';
 export interface MeterDisplayData {
   usedPercent: number;
   timeToResetFormatted: string;
+  resetsAtLocal?: string;
+  asOfLocal?: string;
+  isStale?: boolean;
+  staleReason?: string;
   planType: string;
   percentBar?: string;
   earlyResetsCount?: number;

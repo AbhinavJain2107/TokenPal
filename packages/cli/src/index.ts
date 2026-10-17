@@ -13,7 +13,8 @@ import {
   generateLayerAHandoff,
   MeterAlertManager,
   OverlayLauncher,
-  readLatestMeterStatus
+  readLatestMeterStatus,
+  getDemoStates
 } from '@tokenpal/core';
 
 
@@ -60,7 +61,12 @@ program
     if (initialSnapshot) {
       const initialStatus = watcher.getMeterReader().getMeterStatus();
       if (initialStatus) {
-        console.log(`\n[METER] ${initialStatus.percentBar} | Resets in ${initialStatus.timeToResetFormatted} | Plan: ${initialStatus.planType}`);
+        const resetPart = initialStatus.resetsAtLocal ? ` (${initialStatus.resetsAtLocal})` : '';
+        const asOfPart = initialStatus.asOfLocal ? ` | as of ${initialStatus.asOfLocal}` : '';
+        console.log(`\n[METER] ${initialStatus.percentBar} | Resets in ${initialStatus.timeToResetFormatted}${resetPart}${asOfPart} | Plan: ${initialStatus.planType}`);
+        if (initialStatus.isStale && initialStatus.staleReason) {
+          console.log(`        ⚠️  STALE: ${initialStatus.staleReason}`);
+        }
         if (initialStatus.earlyResetsNote) {
           console.log(`        ⚠️  ${initialStatus.earlyResetsNote}`);
         }
@@ -78,7 +84,12 @@ program
 
     // Rate limit meter update listener
     watcher.on('meter', (status) => {
-      console.log(`[METER] ${status.percentBar} | Resets in ${status.timeToResetFormatted} | Plan: ${status.planType}`);
+      const resetPart = status.resetsAtLocal ? ` (${status.resetsAtLocal})` : '';
+      const asOfPart = status.asOfLocal ? ` | as of ${status.asOfLocal}` : '';
+      console.log(`[METER] ${status.percentBar} | Resets in ${status.timeToResetFormatted}${resetPart}${asOfPart} | Plan: ${status.planType}`);
+      if (status.isStale && status.staleReason) {
+        console.log(`        ⚠️  STALE: ${status.staleReason}`);
+      }
       if (status.earlyResetsNote) {
         console.log(`        ⚠️  ${status.earlyResetsNote}`);
       }
@@ -360,16 +371,21 @@ program
     }
 
     const lastResetDisplay = status.lastReset
-      ? `${status.lastReset.ts} (from ${status.lastReset.prevUsedPercent ?? '?'}% to 0%, early: ${status.lastReset.isEarly ? 'yes' : 'no'})`
+      ? `${status.lastReset.tsLocal} (from ${status.lastReset.prevUsedPercent ?? '?'}% to 0%, early: ${status.lastReset.isEarly ? 'yes' : 'no'})`
       : 'None recorded';
 
     const earlyResetDisplay = status.earlyResetsCount > 0
       ? `${status.earlyResetsCount} in the last 7 days`
       : '0';
 
+    const staleIndicator = status.isStale
+      ? ` (⚠️ STALE: ${status.staleReason || 'Reading is older than 30m or reset passed'})`
+      : '';
+
     console.log('TokenPal Meter Status:');
     console.log(`  Quota Used       : ${status.percentBar}`);
-    console.log(`  Time to Reset    : ${status.timeToResetFormatted} (resets at ${status.resetsAtIso})`);
+    console.log(`  As of            : ${status.asOfLocal}${staleIndicator}`);
+    console.log(`  Time to Reset    : ${status.timeToResetFormatted} (resets at ${status.resetsAtLocal})`);
     console.log(`  Plan Type        : ${status.planType}`);
     console.log(`  Last Reset       : ${lastResetDisplay}`);
     console.log(`  Early Resets     : ${earlyResetDisplay}`);
@@ -381,6 +397,38 @@ program
     }
 
     if (db) db.close();
+  });
+
+program
+  .command('demo')
+  .description('Open desktop overlay once and cycle through all 5 guardian states with fake data (~5s each) then exit')
+  .action(async () => {
+    const states = getDemoStates();
+    const launcher = new OverlayLauncher();
+
+    console.log('='.repeat(70));
+    console.log(' TokenPal Overlay Demo Mode');
+    console.log(' Cycling through 5 guardian states (~5s each) using fake data.');
+    console.log(' Zero file reads. Press Ctrl+C at any time to exit.');
+    console.log('='.repeat(70) + '\n');
+
+    process.on('SIGINT', () => {
+      console.log('\nExiting demo...');
+      launcher.close();
+      process.exit(0);
+    });
+
+    for (let i = 0; i < states.length; i++) {
+      const step = states[i];
+      console.log(`[${i + 1}/${states.length}] ${step.name.toUpperCase()}: ${step.description}`);
+      launcher.showAlert(step.payload);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+
+    console.log('\nDemo complete. Closing overlay...');
+    launcher.close();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    process.exit(0);
   });
 
 program.parse(process.argv);

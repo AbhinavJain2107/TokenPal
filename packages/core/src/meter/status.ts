@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { TokenPalDatabase } from '../db/database.js';
-import { MeterReader } from './meter-reader.js';
+import { MeterReader, formatLocalTime } from './meter-reader.js';
 import { MeterReading } from '../types.js';
 
 export interface MeterStatusSummary {
@@ -11,9 +11,11 @@ export interface MeterStatusSummary {
   timeToResetFormatted: string;
   resetsAtEpochSec: number;
   resetsAtIso: string;
+  resetsAtLocal: string;
   planType: string;
   lastReset: {
     ts: string;
+    tsLocal: string;
     prevUsedPercent: number | null;
     newResetsAt: number;
     isEarly: boolean;
@@ -23,6 +25,9 @@ export interface MeterStatusSummary {
   projectedExhaustionText?: string;
   modelBadgeText?: string;
   latestEventTs: string;
+  asOfLocal: string;
+  isStale: boolean;
+  staleReason?: string;
   sessionsScannedCount: number;
 }
 
@@ -85,9 +90,11 @@ export async function readLatestMeterStatus(
       timeToResetFormatted: status.timeToResetFormatted,
       resetsAtEpochSec: status.resetsAt,
       resetsAtIso: new Date(status.resetsAt * 1000).toISOString(),
+      resetsAtLocal: status.resetsAtLocal || formatLocalTime(status.resetsAt),
       planType: status.planType,
       lastReset: last ? {
         ts: last.ts,
+        tsLocal: formatLocalTime(last.ts),
         prevUsedPercent: last.prev_used_percent,
         newResetsAt: last.new_resets_at,
         isEarly: Boolean(last.is_early)
@@ -97,6 +104,9 @@ export async function readLatestMeterStatus(
       projectedExhaustionText: status.projectedExhaustionText,
       modelBadgeText: status.modelBadgeText,
       latestEventTs: latestSnapshot.ts,
+      asOfLocal: status.asOfLocal || formatLocalTime(latestSnapshot.ts),
+      isStale: Boolean(status.isStale),
+      staleReason: status.staleReason,
       sessionsScannedCount: 0
     };
   }
@@ -183,9 +193,11 @@ export async function readLatestMeterStatus(
     timeToResetFormatted: status.timeToResetFormatted,
     resetsAtEpochSec: status.resetsAt,
     resetsAtIso: new Date(status.resetsAt * 1000).toISOString(),
+    resetsAtLocal: status.resetsAtLocal || formatLocalTime(status.resetsAt),
     planType: status.planType,
     lastReset: lastReset ? {
       ts: lastReset.ts,
+      tsLocal: formatLocalTime(lastReset.ts),
       prevUsedPercent: lastReset.prev_used_percent,
       newResetsAt: lastReset.new_resets_at,
       isEarly: Boolean(lastReset.is_early)
@@ -195,6 +207,9 @@ export async function readLatestMeterStatus(
     projectedExhaustionText: status.projectedExhaustionText,
     modelBadgeText: status.modelBadgeText,
     latestEventTs: latestEvent.ts,
+    asOfLocal: status.asOfLocal || formatLocalTime(latestEvent.ts),
+    isStale: Boolean(status.isStale),
+    staleReason: status.staleReason,
     sessionsScannedCount: selectedFiles.length
   };
 }
