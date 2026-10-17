@@ -14,93 +14,152 @@ import {
   MeterAlertManager,
   OverlayLauncher,
   readLatestMeterStatus,
-  getDemoStates
+  getDemoStates,
+  DaemonManager,
+  enableAutostart,
+  disableAutostart,
+  writePidFileAtomic
 } from '@tokenpal/core';
 
-
 const program = new Command();
+let staleNotice: string | null = null;
+const daemonManager = new DaemonManager({
+  onStalePid: (pid: number, reason: string) => {
+    staleNotice = `Removed stale PID file (pid ${pid}: ${reason}).`;
+  }
+});
 
 program
   .name('tokenpal')
   .description('Proactive Context and Token Guardian for AI Coding Agents')
   .version('0.1.0');
 
-program
-  .command('watch')
-  .description('Watch agent sessions and display context size, token metrics, rate limits meter, and proactive alerts')
-  .option('-d, --dir <path>', 'Custom directory to watch for session logs')
-  .option('--db <path>', 'Path to SQLite database', path.join(os.homedir(), '.tokenpal', 'tokenpal.sqlite'))
-  .option('--config <path>', 'Path to custom config.json')
-  .option('--ui', 'Launch desktop overlay mascot (defaults to terminal-only if omitted)')
-  .option('--legacy-rules', 'Enable retired context growth alerts (off by default)')
-  .action(async (options) => {
-    // Ensure db directory exists
-    const dbDir = path.dirname(options.db);
-    if (!fs.existsSync(dbDir)) {
-      fs.mkdirSync(dbDir, { recursive: true });
+/**
+ * Runs the watcher process in the foreground with clean signal and PID handling.
+ */
+async function runWatcherForeground(options: {
+  dir?: string;
+  db?: string;
+  config?: string;
+  ui?: boolean;
+  legacyRules?: boolean;
+}) {
+  const dbPath = options.db || path.join(os.homedir(), '.tokenpal', 'tokenpal.sqlite');
+  const dbDir = path.dirname(dbPath);
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+  }
+
+  // Atomically write PID file so status and stop can manage instances
+  writePidFileAtomic(daemonManager.getPidFilePath(), process.pid);
+
+  const thresholds = loadRuleThresholds(options.config);
+  const engine = new RulesEngine(thresholds);
+  const db = new TokenPalDatabase(dbPath);
+  const customDirs = options.dir ? [path.resolve(options.dir)] : [];
+  const watcher = new SessionWatcher({ db, customDirs, pollIntervalMs: 1000 });
+  const alertManager = new MeterAlertManager();
+  const launcher = options.ui ? new OverlayLauncher() : null;
+
+  console.log('='.repeat(75));
+  console.log(' TokenPal Guardian Watcher started (Rate Limit Meter Redesign Active)');
+  console.log(` Process ID           : ${process.pid}`);
+  console.log(` Watching directories : ${watcher.getWatchDirs().join(', ')}`);
+  console.log(` Database             : ${dbPath}`);
+  console.log(' Active Alerts        : Projected exhaustion before reset | Single request > 3%');
+  console.log(' Cooldown             : Once per hour per alert type');
+  console.log('='.repeat(75));
+
+  // Show initial meter snapshot if present in database
+  const initialSnapshot = db.getLatestMeterSnapshot();
+  if (initialSnapshot) {
+    const initialStatus = watcher.getMeterReader().getMeterStatus();
+    if (initialStatus) {
+      const resetPart = initialStatus.resetsAtLocal ? ` (${initialStatus.resetsAtLocal})` : '';
+      const asOfPart = initialStatus.asOfLocal ? ` | as of ${initialStatus.asOfLocal}` : '';
+      console.log(`\n[METER] ${initialStatus.percentBar} | Resets in ${initialStatus.timeToResetFormatted}${resetPart}${asOfPart} | Plan: ${initialStatus.planType}`);
+      if (initialStatus.isStale && initialStatus.staleReason) {
+        console.log(`        ⚠️  STALE: ${initialStatus.staleReason}`);
+      }
+      if (initialStatus.earlyResetsNote) {
+        console.log(`        ⚠️  ${initialStatus.earlyResetsNote}`);
+      }
+      if (initialStatus.projectedExhaustionText) {
+        console.log(`        ⏳ ${initialStatus.projectedExhaustionText}`);
+      }
+      if (initialStatus.modelBadgeText) {
+        console.log(`        💡 ${initialStatus.modelBadgeText}`);
+      }
+      console.log('');
+    }
+  }
+
+  console.log('Listening for session turns in real time...\n');
+
+  // Rate limit meter update listener
+  watcher.on('meter', (status) => {
+    const resetPart = status.resetsAtLocal ? ` (${status.resetsAtLocal})` : '';
+    const asOfPart = status.asOfLocal ? ` | as of ${status.asOfLocal}` : '';
+    console.log(`[METER] ${status.percentBar} | Resets in ${status.timeToResetFormatted}${resetPart}${asOfPart} | Plan: ${status.planType}`);
+    if (status.isStale && status.staleReason) {
+      console.log(`        ⚠️  STALE: ${status.staleReason}`);
+    }
+    if (status.earlyResetsNote) {
+      console.log(`        ⚠️  ${status.earlyResetsNote}`);
+    }
+    if (status.projectedExhaustionText) {
+      console.log(`        ⏳ ${status.projectedExhaustionText}`);
     }
 
-    const thresholds = loadRuleThresholds(options.config);
-    const engine = new RulesEngine(thresholds);
-    const db = new TokenPalDatabase(options.db);
-    const customDirs = options.dir ? [path.resolve(options.dir)] : [];
-    const watcher = new SessionWatcher({ db, customDirs, pollIntervalMs: 1000 });
-    const alertManager = new MeterAlertManager();
-    const launcher = options.ui ? new OverlayLauncher() : null;
+    // Check projected exhaustion alert
+    const alert = alertManager.checkProjectedExhaustion(status);
+    if (alert) {
+      console.log(`\n  🚨 ALERT [${alert.rule}]`);
+      console.log(`  Reason : ${alert.reason}`);
+      console.log(`  Action : ${alert.advice}\n`);
 
-    console.log('='.repeat(75));
-    console.log(' TokenPal Guardian Watcher started (Rate Limit Meter Redesign Active)');
-    console.log(` Watching directories : ${watcher.getWatchDirs().join(', ')}`);
-    console.log(` Database             : ${options.db}`);
-    console.log(' Active Alerts        : Projected exhaustion before reset | Single request > 3%');
-    console.log(' Cooldown             : Once per hour per alert type');
-    console.log('='.repeat(75));
+      db.insertAlert({
+        id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        session_id: 'meter',
+        ts: new Date().toISOString(),
+        rule: alert.rule || 'projected_exhaustion',
+        severity: alert.state,
+        shown: 1,
+        action_taken: null
+      });
 
-    // Show initial meter snapshot if present in database
-    const initialSnapshot = db.getLatestMeterSnapshot();
-    if (initialSnapshot) {
-      const initialStatus = watcher.getMeterReader().getMeterStatus();
-      if (initialStatus) {
-        const resetPart = initialStatus.resetsAtLocal ? ` (${initialStatus.resetsAtLocal})` : '';
-        const asOfPart = initialStatus.asOfLocal ? ` | as of ${initialStatus.asOfLocal}` : '';
-        console.log(`\n[METER] ${initialStatus.percentBar} | Resets in ${initialStatus.timeToResetFormatted}${resetPart}${asOfPart} | Plan: ${initialStatus.planType}`);
-        if (initialStatus.isStale && initialStatus.staleReason) {
-          console.log(`        ⚠️  STALE: ${initialStatus.staleReason}`);
-        }
-        if (initialStatus.earlyResetsNote) {
-          console.log(`        ⚠️  ${initialStatus.earlyResetsNote}`);
-        }
-        if (initialStatus.projectedExhaustionText) {
-          console.log(`        ⏳ ${initialStatus.projectedExhaustionText}`);
-        }
-        if (initialStatus.modelBadgeText) {
-          console.log(`        💡 ${initialStatus.modelBadgeText}`);
-        }
-        console.log('');
+      if (launcher) {
+        launcher.showAlert(alert);
       }
     }
+  });
 
-    console.log('Listening for session turns in real time...\n');
+  // Model switch notification
+  watcher.on('model_switch', ({ notice }) => {
+    console.log(`\n[NOTICE] ${notice}\n`);
+  });
 
-    // Rate limit meter update listener
-    watcher.on('meter', (status) => {
-      const resetPart = status.resetsAtLocal ? ` (${status.resetsAtLocal})` : '';
-      const asOfPart = status.asOfLocal ? ` | as of ${status.asOfLocal}` : '';
-      console.log(`[METER] ${status.percentBar} | Resets in ${status.timeToResetFormatted}${resetPart}${asOfPart} | Plan: ${status.planType}`);
-      if (status.isStale && status.staleReason) {
-        console.log(`        ⚠️  STALE: ${status.staleReason}`);
-      }
-      if (status.earlyResetsNote) {
-        console.log(`        ⚠️  ${status.earlyResetsNote}`);
-      }
-      if (status.projectedExhaustionText) {
-        console.log(`        ⏳ ${status.projectedExhaustionText}`);
-      }
+  // Quota reset detected
+  watcher.on('quota_reset', (reset) => {
+    const earlyLabel = reset.is_early ? ' (EARLY RESET)' : '';
+    console.log(`\n[RESET] Quota reset detected! Previous: ${reset.prev_used_percent ?? '?'}% -> New: 0%${earlyLabel}\n`);
+  });
 
-      // Check projected exhaustion alert
-      const alert = alertManager.checkProjectedExhaustion(status);
+  // Request cost measured
+  watcher.on('request_cost', (cost) => {
+    if (cost.spannedReset) {
+      console.log(`[COST] Turn ${cost.turnId}: Skipped (spanned quota reset)`);
+    } else {
+      console.log(
+        `[COST] Turn ${cost.turnId}: ${cost.costDisplay} ` +
+        `(${cost.callsCount} call${cost.callsCount !== 1 ? 's' : ''}, ${cost.tokensCount.toLocaleString()} tokens)`
+      );
+
+      // Check high single request cost alert (> ~3%)
+      const currentStatus = watcher.getMeterReader().getMeterStatus(cost.model);
+      const alert = alertManager.checkRequestCost(cost, currentStatus);
       if (alert) {
-        console.log(`\n  🚨 ALERT [${alert.rule}]`);
+        console.log(`\n  ⚠️  ALERT [${alert.rule}]`);
         console.log(`  Reason : ${alert.reason}`);
         console.log(`  Action : ${alert.advice}\n`);
 
@@ -108,7 +167,7 @@ program
           id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           session_id: 'meter',
           ts: new Date().toISOString(),
-          rule: alert.rule || 'projected_exhaustion',
+          rule: alert.rule || 'single_request_high',
           severity: alert.state,
           shown: 1,
           action_taken: null
@@ -118,106 +177,383 @@ program
           launcher.showAlert(alert);
         }
       }
+    }
+  });
+
+  watcher.on('turn', (payload) => {
+    const { session, turn, turnIndex, meterStatus } = payload;
+    const shortId = session.id.slice(0, 8);
+    const model = turn.model || 'unknown';
+    const effort = turn.effort ? ` [${turn.effort}]` : '';
+    const contextSize = turn.input_tokens.toLocaleString();
+    const outputTok = turn.output_tokens.toLocaleString();
+    const cachedTok = turn.cached_tokens.toLocaleString();
+
+    const timeStr = new Date(turn.ts).toLocaleTimeString();
+    const meterPart = meterStatus ? ` | Meter: ${Math.round(meterStatus.usedPercent)}%` : '';
+
+    console.log(
+      `[${timeStr}] Sess ${shortId} | Turn #${turnIndex.toString().padStart(2)} | ` +
+      `Model: ${model}${effort} | ` +
+      `Context: ${contextSize.padStart(7)} | ` +
+      `Cached: ${cachedTok.padStart(6)} | ` +
+      `Out: ${outputTok.padStart(5)}${meterPart}`
+    );
+
+    if (options.legacyRules) {
+      const turns = db.getTurns(session.id);
+      const tools = db.getToolEvents(session.id);
+      const evalResult = engine.evaluate(session, turns, tools, true);
+      if (evalResult.shouldAlert && evalResult.primaryAlert) {
+        const alert = evalResult.primaryAlert;
+        console.log(`  [Legacy Rule ${alert.rule}] ${alert.reason} -> ${alert.advice}`);
+      }
+    }
+  });
+
+  watcher.on('unsupported', ({ filePath, error }) => {
+    console.warn(`[WARN] Unsupported log format in ${path.basename(filePath)}: ${error}`);
+  });
+
+  watcher.on('error', (err) => {
+    console.error('[ERROR] Watcher encountered an error:', err);
+  });
+
+  await watcher.start();
+
+  // Periodic log rotation check (cap at ~5 MB)
+  const logRotateTimer = setInterval(() => {
+    try {
+      daemonManager.rotateLogs();
+    } catch {
+      // ignore
+    }
+  }, 60000);
+
+  // Clean shutdown handling for both SIGINT and SIGTERM
+  let isCleaningUp = false;
+  const cleanShutdown = () => {
+    if (isCleaningUp) return;
+    isCleaningUp = true;
+    clearInterval(logRotateTimer);
+    console.log('\nStopping TokenPal watcher...');
+    watcher.stop();
+    if (launcher) {
+      launcher.close();
+    }
+    db.close();
+    daemonManager.cleanupPidOnExit();
+    process.exit(0);
+  };
+
+  process.on('SIGINT', cleanShutdown);
+  process.on('SIGTERM', cleanShutdown);
+}
+
+program
+  .command('start')
+  .description('Run TokenPal watcher in the background as a detached daemon')
+  .option('-d, --dir <path>', 'Custom directory to watch for session logs')
+  .option('--db <path>', 'Path to SQLite database', path.join(os.homedir(), '.tokenpal', 'tokenpal.sqlite'))
+  .option('--config <path>', 'Path to custom config.json')
+  .option('--ui', 'Launch desktop overlay mascot during alerts')
+  .option('--legacy-rules', 'Enable retired context growth alerts (off by default)')
+  .option('--foreground', 'Run watcher directly in the terminal (foreground mode)')
+  .action(async (options) => {
+    if (options.foreground) {
+      const currentStatus = daemonManager.getStatus();
+      if (currentStatus.running && currentStatus.pid !== process.pid) {
+        console.log(`TokenPal daemon is already running (pid ${currentStatus.pid}).`);
+        process.exit(0);
+      }
+      await runWatcherForeground(options);
+      return;
+    }
+
+    const result = await daemonManager.start({
+      ui: options.ui,
+      watchDir: options.dir,
+      dbPath: options.db,
+      configPath: options.config,
+      legacyRules: options.legacyRules
     });
 
-    // Model switch notification (one-time notice, no yellow state)
-    watcher.on('model_switch', ({ notice }) => {
-      console.log(`\n[NOTICE] ${notice}\n`);
+    if (staleNotice) {
+      console.log(staleNotice);
+    }
+
+    if (result.alreadyRunning) {
+      console.log(`TokenPal daemon is already running (pid ${result.pid}).`);
+      process.exit(0);
+    }
+
+    if (result.started) {
+      console.log(`started (pid ${result.pid})`);
+      process.exit(0);
+    }
+
+    console.error(`Failed to start TokenPal daemon: ${result.error}`);
+    process.exit(1);
+  });
+
+program
+  .command('stop')
+  .description('Stop the running TokenPal daemon and any helper overlay processes')
+  .action(async () => {
+    const result = await daemonManager.stop();
+    if (staleNotice) {
+      console.log(staleNotice);
+    }
+    if (!result.wasRunning) {
+      console.log('not running');
+      process.exit(0);
+    }
+    console.log(`TokenPal daemon stopped (pid ${result.pid}).`);
+  });
+
+program
+  .command('restart')
+  .description('Restart the TokenPal daemon')
+  .option('-d, --dir <path>', 'Custom directory to watch for session logs')
+  .option('--db <path>', 'Path to SQLite database', path.join(os.homedir(), '.tokenpal', 'tokenpal.sqlite'))
+  .option('--config <path>', 'Path to custom config.json')
+  .option('--ui', 'Launch desktop overlay mascot during alerts')
+  .option('--legacy-rules', 'Enable retired context growth alerts (off by default)')
+  .action(async (options) => {
+    const stopped = await daemonManager.stop();
+    if (stopped.wasRunning) {
+      console.log(`TokenPal daemon stopped (pid ${stopped.pid}).`);
+    }
+
+    const started = await daemonManager.start({
+      ui: options.ui,
+      watchDir: options.dir,
+      dbPath: options.db,
+      configPath: options.config,
+      legacyRules: options.legacyRules
     });
 
-    // Quota reset detected
-    watcher.on('quota_reset', (reset) => {
-      const earlyLabel = reset.is_early ? ' (EARLY RESET)' : '';
-      console.log(`\n[RESET] Quota reset detected! Previous: ${reset.prev_used_percent ?? '?'}% -> New: 0%${earlyLabel}\n`);
-    });
+    if (staleNotice) {
+      console.log(staleNotice);
+    }
 
-    // Request cost measured
-    watcher.on('request_cost', (cost) => {
-      if (cost.spannedReset) {
-        console.log(`[COST] Turn ${cost.turnId}: Skipped (spanned quota reset)`);
-      } else {
-        console.log(
-          `[COST] Turn ${cost.turnId}: ${cost.costDisplay} ` +
-          `(${cost.callsCount} call${cost.callsCount !== 1 ? 's' : ''}, ${cost.tokensCount.toLocaleString()} tokens)`
-        );
+    if (started.alreadyRunning) {
+      console.log(`TokenPal daemon is already running (pid ${started.pid}).`);
+      process.exit(0);
+    }
 
-        // Check high single request cost alert (> ~3%)
-        const currentStatus = watcher.getMeterReader().getMeterStatus(cost.model);
-        const alert = alertManager.checkRequestCost(cost, currentStatus);
-        if (alert) {
-          console.log(`\n  ⚠️  ALERT [${alert.rule}]`);
-          console.log(`  Reason : ${alert.reason}`);
-          console.log(`  Action : ${alert.advice}\n`);
+    if (started.started) {
+      console.log(`started (pid ${started.pid})`);
+      process.exit(0);
+    }
 
-          db.insertAlert({
-            id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            session_id: 'meter',
-            ts: new Date().toISOString(),
-            rule: alert.rule || 'single_request_high',
-            severity: alert.state,
-            shown: 1,
-            action_taken: null
-          });
+    console.error(`Failed to restart TokenPal daemon: ${started.error}`);
+    process.exit(1);
+  });
 
-          if (launcher) {
-            launcher.showAlert(alert);
+program
+  .command('watch')
+  .description('Watch agent sessions in foreground and display context size and alerts')
+  .option('-d, --dir <path>', 'Custom directory to watch for session logs')
+  .option('--db <path>', 'Path to SQLite database', path.join(os.homedir(), '.tokenpal', 'tokenpal.sqlite'))
+  .option('--config <path>', 'Path to custom config.json')
+  .option('--ui', 'Launch desktop overlay mascot (defaults to terminal-only if omitted)')
+  .option('--legacy-rules', 'Enable retired context growth alerts (off by default)')
+  .action(async (options) => {
+    await runWatcherForeground(options);
+  });
+
+program
+  .command('status')
+  .description('Show TokenPal daemon state and current rate limit meter status')
+  .option('-d, --dir <path>', 'Custom directory containing agent session logs (defaults to ~/.codex/sessions)')
+  .option('--db <path>', 'Path to SQLite database', path.join(os.homedir(), '.tokenpal', 'tokenpal.sqlite'))
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (options) => {
+    const daemon = daemonManager.getStatus();
+
+    let db: TokenPalDatabase | undefined;
+    if (options.db) {
+      const dbDir = path.dirname(options.db);
+      if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true });
+      }
+      db = new TokenPalDatabase(options.db);
+    }
+
+    const sessionsDir = options.dir ? path.resolve(options.dir) : undefined;
+    const status = await readLatestMeterStatus({ sessionsDir, db });
+
+    if (options.json) {
+      console.log(JSON.stringify({ daemon, meter: status }, null, 2));
+      if (db) db.close();
+      return;
+    }
+
+    // First line shows running/stopped (pid, uptime)
+    if (daemon.running) {
+      console.log(`TokenPal daemon: running (pid ${daemon.pid}, uptime ${daemon.uptimeFormatted || '0s'})\n`);
+    } else {
+      console.log('TokenPal daemon: stopped\n');
+    }
+
+    if (staleNotice) {
+      console.log(staleNotice + '\n');
+    }
+
+    if (!status) {
+      console.log('No rate limit meter events found.');
+      if (db) db.close();
+      return;
+    }
+
+    const lastResetDisplay = status.lastReset
+      ? `${status.lastReset.tsLocal} (from ${status.lastReset.prevUsedPercent ?? '?'}% to 0%, early: ${status.lastReset.isEarly ? 'yes' : 'no'})`
+      : 'None recorded';
+
+    const earlyResetDisplay = status.earlyResetsCount > 0
+      ? `${status.earlyResetsCount} in the last 7 days`
+      : '0';
+
+    const staleIndicator = status.isStale
+      ? ` (⚠️ STALE: ${status.staleReason || 'Reading is older than 30m or reset passed'})`
+      : '';
+
+    console.log('TokenPal Meter Status:');
+    console.log(`  Quota Used       : ${status.percentBar}`);
+    console.log(`  As of            : ${status.asOfLocal}${staleIndicator}`);
+    console.log(`  Time to Reset    : ${status.timeToResetFormatted} (resets at ${status.resetsAtLocal})`);
+    console.log(`  Plan Type        : ${status.planType}`);
+    console.log(`  Last Reset       : ${lastResetDisplay}`);
+    console.log(`  Early Resets     : ${earlyResetDisplay}`);
+    if (status.projectedExhaustionText) {
+      console.log(`  Projection       : ${status.projectedExhaustionText}`);
+    }
+    if (status.modelBadgeText) {
+      console.log(`  Model Note       : ${status.modelBadgeText}`);
+    }
+
+    if (db) db.close();
+  });
+
+program
+  .command('logs')
+  .description('Print the latest TokenPal daemon logs (default: last 50 lines)')
+  .option('-n, --lines <count>', 'Number of lines to display', '50')
+  .option('-f, --follow', 'Follow log output in real time')
+  .action((options) => {
+    const linesCount = parseInt(options.lines, 10) || 50;
+    const logInfo = daemonManager.getLogs(linesCount);
+
+    if (!fs.existsSync(logInfo.logPath)) {
+      console.log(`No log file found at ${logInfo.logPath}.`);
+      process.exit(0);
+    }
+
+    for (const line of logInfo.lines) {
+      console.log(line);
+    }
+
+    if (options.follow) {
+      let currentSize = 0;
+      try {
+        currentSize = fs.statSync(logInfo.logPath).size;
+      } catch {
+        currentSize = 0;
+      }
+
+      const pollTimer = setInterval(() => {
+        try {
+          if (!fs.existsSync(logInfo.logPath)) return;
+          const stats = fs.statSync(logInfo.logPath);
+          if (stats.size > currentSize) {
+            const fd = fs.openSync(logInfo.logPath, 'r');
+            const buffer = Buffer.alloc(stats.size - currentSize);
+            fs.readSync(fd, buffer, 0, buffer.length, currentSize);
+            fs.closeSync(fd);
+            currentSize = stats.size;
+            process.stdout.write(buffer.toString('utf-8'));
+          } else if (stats.size < currentSize) {
+            // Log rotation occurred, reset offset
+            currentSize = 0;
           }
+        } catch {
+          // ignore transient read errors
         }
+      }, 250);
+
+      process.on('SIGINT', () => {
+        clearInterval(pollTimer);
+        process.exit(0);
+      });
+    }
+  });
+
+program
+  .command('autostart <action>')
+  .description('Configure macOS launchd LaunchAgent to start TokenPal on login (on | off)')
+  .action((action: string) => {
+    const normalized = action.toLowerCase();
+    if (normalized !== 'on' && normalized !== 'off') {
+      console.error('Invalid action. Usage: tokenpal autostart on|off');
+      process.exit(1);
+    }
+
+    if (normalized === 'on') {
+      const res = enableAutostart();
+      if (!res.supported) {
+        console.log('not supported yet');
+        process.exit(0);
       }
-    });
-
-    watcher.on('turn', (payload) => {
-      const { session, turn, turnIndex, meterStatus } = payload;
-      const shortId = session.id.slice(0, 8);
-      const model = turn.model || 'unknown';
-      const effort = turn.effort ? ` [${turn.effort}]` : '';
-      const contextSize = turn.input_tokens.toLocaleString();
-      const outputTok = turn.output_tokens.toLocaleString();
-      const cachedTok = turn.cached_tokens.toLocaleString();
-
-      const timeStr = new Date(turn.ts).toLocaleTimeString();
-      const meterPart = meterStatus ? ` | Meter: ${Math.round(meterStatus.usedPercent)}%` : '';
-
-      console.log(
-        `[${timeStr}] Sess ${shortId} | Turn #${turnIndex.toString().padStart(2)} | ` +
-        `Model: ${model}${effort} | ` +
-        `Context: ${contextSize.padStart(7)} | ` +
-        `Cached: ${cachedTok.padStart(6)} | ` +
-        `Out: ${outputTok.padStart(5)}${meterPart}`
-      );
-
-      // Legacy rules check if explicitly enabled
-      if (options.legacyRules) {
-        const turns = db.getTurns(session.id);
-        const tools = db.getToolEvents(session.id);
-        const evalResult = engine.evaluate(session, turns, tools, true);
-        if (evalResult.shouldAlert && evalResult.primaryAlert) {
-          const alert = evalResult.primaryAlert;
-          console.log(`  [Legacy Rule ${alert.rule}] ${alert.reason} -> ${alert.advice}`);
-        }
+      if (!res.success) {
+        console.error(`Error enabling autostart: ${res.error}`);
+        process.exit(1);
       }
-    });
+      console.log(res.message);
+      console.log(`Command executed: ${res.commandExecuted}`);
+    } else {
+      const res = disableAutostart();
+      if (!res.supported) {
+        console.log('not supported yet');
+        process.exit(0);
+      }
+      console.log(res.message);
+      if (res.commandExecuted) {
+        console.log(`Command executed: ${res.commandExecuted}`);
+      }
+    }
+  });
 
-    watcher.on('unsupported', ({ filePath, error }) => {
-      console.warn(`[WARN] Unsupported log format in ${path.basename(filePath)}: ${error}`);
-    });
+program
+  .command('demo')
+  .description('Open desktop overlay once and cycle through all 5 guardian states with fake data (~5s each) then exit')
+  .action(async () => {
+    const states = getDemoStates();
+    const launcher = new OverlayLauncher();
 
-    watcher.on('error', (err) => {
-      console.error('[ERROR] Watcher encountered an error:', err);
-    });
+    console.log('='.repeat(70));
+    console.log(' TokenPal Overlay Demo Mode');
+    console.log(' Cycling through 5 guardian states (~5s each) using fake data.');
+    console.log(' Zero file reads. Press Ctrl+C at any time to exit.');
+    console.log('='.repeat(70) + '\n');
 
-    await watcher.start();
-
-    // Graceful exit
     process.on('SIGINT', () => {
-      console.log('\nStopping TokenPal watcher...');
-      watcher.stop();
-      if (launcher) {
-        launcher.close();
-      }
-      db.close();
+      console.log('\nExiting demo...');
+      launcher.close();
       process.exit(0);
     });
+
+    for (let i = 0; i < states.length; i++) {
+      const step = states[i];
+      console.log(`[${i + 1}/${states.length}] ${step.name.toUpperCase()}: ${step.description}`);
+      launcher.showAlert(step.payload);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+
+    console.log('\nDemo complete. Closing overlay...');
+    launcher.close();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    process.exit(0);
   });
 
 program
@@ -339,97 +675,4 @@ program
     console.log('='.repeat(60));
   });
 
-program
-  .command('status')
-  .description('Print current rate limit meter status once (percent, countdown, plan, resets) read from latest session event')
-  .option('-d, --dir <path>', 'Custom directory containing agent session logs (defaults to ~/.codex/sessions)')
-  .option('--db <path>', 'Path to SQLite database', path.join(os.homedir(), '.tokenpal', 'tokenpal.sqlite'))
-  .option('--json', 'Output machine-readable JSON')
-  .action(async (options) => {
-    let db: TokenPalDatabase | undefined;
-    if (options.db) {
-      const dbDir = path.dirname(options.db);
-      if (!fs.existsSync(dbDir)) {
-        fs.mkdirSync(dbDir, { recursive: true });
-      }
-      db = new TokenPalDatabase(options.db);
-    }
-
-    const sessionsDir = options.dir ? path.resolve(options.dir) : undefined;
-    const status = await readLatestMeterStatus({ sessionsDir, db });
-
-    if (!status) {
-      console.log('No rate limit meter events found.');
-      if (db) db.close();
-      return;
-    }
-
-    if (options.json) {
-      console.log(JSON.stringify(status, null, 2));
-      if (db) db.close();
-      return;
-    }
-
-    const lastResetDisplay = status.lastReset
-      ? `${status.lastReset.tsLocal} (from ${status.lastReset.prevUsedPercent ?? '?'}% to 0%, early: ${status.lastReset.isEarly ? 'yes' : 'no'})`
-      : 'None recorded';
-
-    const earlyResetDisplay = status.earlyResetsCount > 0
-      ? `${status.earlyResetsCount} in the last 7 days`
-      : '0';
-
-    const staleIndicator = status.isStale
-      ? ` (⚠️ STALE: ${status.staleReason || 'Reading is older than 30m or reset passed'})`
-      : '';
-
-    console.log('TokenPal Meter Status:');
-    console.log(`  Quota Used       : ${status.percentBar}`);
-    console.log(`  As of            : ${status.asOfLocal}${staleIndicator}`);
-    console.log(`  Time to Reset    : ${status.timeToResetFormatted} (resets at ${status.resetsAtLocal})`);
-    console.log(`  Plan Type        : ${status.planType}`);
-    console.log(`  Last Reset       : ${lastResetDisplay}`);
-    console.log(`  Early Resets     : ${earlyResetDisplay}`);
-    if (status.projectedExhaustionText) {
-      console.log(`  Projection       : ${status.projectedExhaustionText}`);
-    }
-    if (status.modelBadgeText) {
-      console.log(`  Model Note       : ${status.modelBadgeText}`);
-    }
-
-    if (db) db.close();
-  });
-
-program
-  .command('demo')
-  .description('Open desktop overlay once and cycle through all 5 guardian states with fake data (~5s each) then exit')
-  .action(async () => {
-    const states = getDemoStates();
-    const launcher = new OverlayLauncher();
-
-    console.log('='.repeat(70));
-    console.log(' TokenPal Overlay Demo Mode');
-    console.log(' Cycling through 5 guardian states (~5s each) using fake data.');
-    console.log(' Zero file reads. Press Ctrl+C at any time to exit.');
-    console.log('='.repeat(70) + '\n');
-
-    process.on('SIGINT', () => {
-      console.log('\nExiting demo...');
-      launcher.close();
-      process.exit(0);
-    });
-
-    for (let i = 0; i < states.length; i++) {
-      const step = states[i];
-      console.log(`[${i + 1}/${states.length}] ${step.name.toUpperCase()}: ${step.description}`);
-      launcher.showAlert(step.payload);
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-    }
-
-    console.log('\nDemo complete. Closing overlay...');
-    launcher.close();
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    process.exit(0);
-  });
-
 program.parse(process.argv);
-

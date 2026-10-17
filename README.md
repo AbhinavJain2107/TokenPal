@@ -21,17 +21,24 @@ pnpm install
 # 3. Build all workspace packages
 pnpm build
 
-# 4. Run watcher with desktop mascot overlay (defaults to ~/.codex/sessions)
-node packages/cli/dist/index.js watch
+# 4. Link CLI globally to run 'tokenpal' from any directory:
+pnpm link --global
+# (or from the cli package directly: pnpm --filter @tokenpal/cli link --global)
 
-# Terminal-only watcher:
-node packages/cli/dist/index.js watch --no-ui
+# 5. Start watcher as a background daemon:
+tokenpal start
 
-# 5. Check current rate limits meter once
-node packages/cli/dist/index.js status
+# 6. Check daemon and quota meter status:
+tokenpal status
 
-# 6. Test overlay animations with demo mode (cycles 5 states with fake data, ~5s each)
-node packages/cli/dist/index.js demo
+# 7. View daemon logs (rotates at ~5 MB):
+tokenpal logs -f
+
+# 8. Stop background daemon:
+tokenpal stop
+
+# 9. Test overlay animations with demo mode (cycles 5 states with fake data, ~5s each):
+tokenpal demo
 ```
 
 ### Native Build Note (`better-sqlite3`)
@@ -56,19 +63,34 @@ TokenPal relies on `better-sqlite3` for high-performance zero-latency local SQLi
 
 ## CLI Commands
 
-### 1. `tokenpal watch`
-Monitors session logs in real time using stored file offsets. Emits turn updates with context size (input tokens), cached token counts, output tokens, rate limits meter with countdown, and proactive alerts.
+### 1. `tokenpal start`
+Runs the watcher as a detached background daemon in its own session, redirecting stdio to `~/.tokenpal/tokenpal.log`, writes its PID atomically to `~/.tokenpal/tokenpal.pid`, verifies process liveness, and prints `started (pid N)`. If already running, prints that and exits 0 without spawning a second instance. Safe PID validation guards against PID reuse after a reboot or crash, cleaning stale PID files automatically.
 
 ```bash
-tokenpal watch [options]
+tokenpal start [options]
+  --foreground         Run watcher directly in the terminal (foreground mode)
   -d, --dir <path>     Watch a specific directory (default: ~/.codex/sessions)
   --db <path>          Path to SQLite database (default: ~/.tokenpal/tokenpal.sqlite)
   --config <path>      Path to custom config.json
-  --no-ui              Terminal-only mode without desktop overlay
+  --ui                 Launch desktop mascot overlay during alerts
 ```
 
-### 2. `tokenpal status`
-Prints the current rate limits meter once (percent, local reset countdown & timestamp, plan, last reset in local time, and early-reset count) read directly from the latest session event in `~/.codex/sessions`. Zero message text.
+### 2. `tokenpal stop`
+Stops the running TokenPal daemon. Sends SIGTERM, waits up to ~5 seconds for clean termination, and escalates to SIGKILL if necessary. Recursively terminates any child processes (such as Electron overlay and helper processes) so zero orphans remain, and cleanly deletes `~/.tokenpal/tokenpal.pid`. If not running, prints `not running` and exits 0.
+
+```bash
+tokenpal stop
+```
+
+### 3. `tokenpal restart`
+Stops the running daemon and starts a fresh background instance.
+
+```bash
+tokenpal restart [options]
+```
+
+### 4. `tokenpal status`
+First line displays the daemon state (`TokenPal daemon: running (pid N, uptime ...)` or `TokenPal daemon: stopped`). Followed by the complete rate limits meter (percent, local reset countdown & timestamp, plan, last reset in local time, and early-reset count) read directly from the latest session event in `~/.codex/sessions`. Works even when the daemon is stopped. Zero message text.
 
 ```bash
 tokenpal status [options]
@@ -77,21 +99,49 @@ tokenpal status [options]
   --json               Output machine-readable JSON (preserves UTC ISO timestamps)
 ```
 
-### 3. `tokenpal demo`
+### 5. `tokenpal logs`
+Prints the last 50 lines of `~/.tokenpal/tokenpal.log` by default. Use `-f` to follow log output in real time. Log files are capped at ~5 MB and automatically rotated to `tokenpal.log.1`. No prompt or message text is ever logged—only token counts and guardian metadata.
+
+```bash
+tokenpal logs [options]
+  -n, --lines <count>  Number of lines to display (default: 50)
+  -f, --follow         Follow log output in real time
+```
+
+### 6. `tokenpal autostart on|off` (macOS)
+Creates or removes a launchd LaunchAgent at `~/Library/LaunchAgents/com.tokenpal.watcher.plist` with `RunAtLoad = true` and NO `KeepAlive`, using absolute paths to `node` and the CLI so `tokenpal stop` stays stopped until next login. On non-macOS platforms, prints `not supported yet`. Reports the exact `launchctl` command executed.
+
+```bash
+tokenpal autostart on    # launchctl load -w ~/Library/LaunchAgents/com.tokenpal.watcher.plist
+tokenpal autostart off   # launchctl unload -w ~/Library/LaunchAgents/com.tokenpal.watcher.plist
+```
+
+### 7. `tokenpal watch`
+Monitors session logs in foreground mode. Emits turn updates with context size (input tokens), cached token counts, output tokens, rate limits meter with countdown, and proactive alerts. Handles SIGINT/SIGTERM cleanly.
+
+```bash
+tokenpal watch [options]
+  -d, --dir <path>     Watch a specific directory (default: ~/.codex/sessions)
+  --db <path>          Path to SQLite database (default: ~/.tokenpal/tokenpal.sqlite)
+  --config <path>      Path to custom config.json
+  --ui                 Launch desktop overlay mascot during alerts
+```
+
+### 8. `tokenpal demo`
 Opens the desktop mascot overlay once and automatically cycles through every guardian state (Healthy, Projected Exhaustion, Single High Request, Astra Badge, and Stale Reading) using fake data (~5 seconds each), then exits cleanly. Performs zero file reads.
 
 ```bash
 tokenpal demo
 ```
 
-### 4. `tokenpal replay <file>`
+### 9. `tokenpal replay <file>`
 Parses a past `.jsonl` session file from start to finish, evaluating rules at each turn and displaying a breakdown of context growth, cached tokens, and a Triggered Alerts Summary.
 
 ```bash
 tokenpal replay <session-file.jsonl>
 ```
 
-### 5. `tokenpal handoff`
+### 10. `tokenpal handoff`
 Extracts factual state from git (`git branch`, last commit, `git status`, `git diff --stat`) and recent session test/lint logs, formats a concise markdown handoff under 60 lines, saves to `.handoff/latest.md`, and copies it to your clipboard.
 
 ```bash

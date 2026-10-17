@@ -2,6 +2,9 @@
   "name": "tokenpal-monorepo",
   "version": "0.1.0",
   "private": true,
+  "bin": {
+    "tokenpal": "./packages/cli/dist/index.js"
+  },
   "description": "Proactive Context and Token Guardian for AI Coding Agents",
   "packageManager": "pnpm@10.30.3",
   "scripts": {
