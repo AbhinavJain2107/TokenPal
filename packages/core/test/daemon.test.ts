@@ -2,10 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
+import * as child_process from 'node:child_process';
+import { createRequire } from 'node:module';
 import {
   DaemonManager,
   writePidFileAtomic,
   readPidFile,
+  readPidFileInfo,
+  DAEMON_FLAG_MARKER,
   removePidFile,
   isTokenPalWatcherCommand,
   formatUptime,
@@ -38,10 +42,19 @@ describe('Daemon Management', () => {
       writePidFileAtomic(pidFile, 12345);
       expect(fs.existsSync(pidFile)).toBe(true);
       expect(readPidFile(pidFile)).toBe(12345);
+      expect(readPidFileInfo(pidFile)).toEqual({ pid: 12345, marker: undefined });
+    });
+
+    it('writes and reads PID file with unique daemon marker', () => {
+      writePidFileAtomic(pidFile, 12345, DAEMON_FLAG_MARKER);
+      expect(fs.existsSync(pidFile)).toBe(true);
+      expect(readPidFile(pidFile)).toBe(12345);
+      expect(readPidFileInfo(pidFile)).toEqual({ pid: 12345, marker: DAEMON_FLAG_MARKER });
     });
 
     it('safely handles non-existent or corrupted PID file', () => {
       expect(readPidFile(path.join(tempDir, 'does-not-exist.pid'))).toBeNull();
+      expect(readPidFileInfo(path.join(tempDir, 'does-not-exist.pid'))).toBeNull();
 
       // Write non-numeric corrupt content
       fs.writeFileSync(pidFile, 'not-a-pid\n');
@@ -66,6 +79,18 @@ describe('Daemon Management', () => {
       expect(isTokenPalWatcherCommand('/usr/local/bin/tokenpal start --foreground')).toBe(true);
       expect(isTokenPalWatcherCommand('node packages/cli/dist/index.js watch --dir /logs')).toBe(true);
       expect(isTokenPalWatcherCommand('/bin/node /repo/dist/index.js tokenpal watch')).toBe(true);
+      expect(isTokenPalWatcherCommand('node /repo/dist/index.js watch --tokenpal-daemon')).toBe(true);
+    });
+
+    it('rejects commands when PID is reused by other tokenpal CLI subcommands', () => {
+      expect(isTokenPalWatcherCommand('node /Users/dev/TokenPal/packages/cli/dist/index.js logs -f')).toBe(false);
+      expect(isTokenPalWatcherCommand('tokenpal logs -f')).toBe(false);
+      expect(isTokenPalWatcherCommand('node /usr/local/bin/tokenpal logs -n 50')).toBe(false);
+      expect(isTokenPalWatcherCommand('tokenpal status')).toBe(false);
+      expect(isTokenPalWatcherCommand('tokenpal demo')).toBe(false);
+      expect(isTokenPalWatcherCommand('tokenpal handoff')).toBe(false);
+      expect(isTokenPalWatcherCommand('tokenpal replay /tmp/session.jsonl')).toBe(false);
+      expect(isTokenPalWatcherCommand('node packages/cli/dist/index.js autostart enable')).toBe(false);
     });
 
     it('rejects commands when PID is reused by other processes', () => {
@@ -188,6 +213,160 @@ describe('Daemon Management', () => {
       expect(status.stalePidCleaned).toBe(4001);
       expect(fs.existsSync(pidFile)).toBe(false);
       expect(staleReported?.pid).toBe(4001);
+      expect(staleReported?.reason).toContain('pid reused by another command');
+    });
+
+    it('reports running when marker is present in both PID file and command line', () => {
+      const fakeProcessTable = new Map<number, ProcessInfo>([
+        [
+          4100,
+          {
+            running: true,
+            command: 'node /repo/packages/cli/dist/index.js watch --tokenpal-daemon --ui',
+            uptimeSec: 250
+          }
+        ]
+      ]);
+
+      const manager = new DaemonManager({
+        rootDir: tempDir,
+        pidFile,
+        logFile,
+        processChecker: (pid) => fakeProcessTable.get(pid) || { running: false }
+      });
+
+      writePidFileAtomic(pidFile, 4100, DAEMON_FLAG_MARKER);
+      const status = manager.getStatus();
+
+      expect(status.running).toBe(true);
+      expect(status.pid).toBe(4100);
+      expect(status.uptimeSec).toBe(250);
+      expect(fs.existsSync(pidFile)).toBe(true);
+    });
+
+    it('rejects PID reuse by another TokenPal CLI command (e.g. tokenpal logs -f) when marker is required', () => {
+      const fakeProcessTable = new Map<number, ProcessInfo>([
+        [
+          4200,
+          {
+            running: true,
+            command: 'node /repo/packages/cli/dist/index.js logs -f',
+            uptimeSec: 60
+          }
+        ]
+      ]);
+
+      let staleReported: { pid: number; reason: string } | null = null;
+
+      const manager = new DaemonManager({
+        rootDir: tempDir,
+        pidFile,
+        logFile,
+        processChecker: (pid) => fakeProcessTable.get(pid) || { running: false },
+        onStalePid: (pid, reason) => {
+          staleReported = { pid, reason };
+        }
+      });
+
+      // PID file was written by daemon with marker
+      writePidFileAtomic(pidFile, 4200, DAEMON_FLAG_MARKER);
+      const status = manager.getStatus();
+
+      expect(status.running).toBe(false);
+      expect(status.stalePidCleaned).toBe(4200);
+      expect(fs.existsSync(pidFile)).toBe(false);
+      expect(staleReported?.pid).toBe(4200);
+      expect(staleReported?.reason).toContain('pid reused by another command');
+    });
+
+    it('rejects PID reuse by tokenpal status when marker is required', () => {
+      const fakeProcessTable = new Map<number, ProcessInfo>([
+        [
+          4300,
+          {
+            running: true,
+            command: 'tokenpal status',
+            uptimeSec: 5
+          }
+        ]
+      ]);
+
+      const manager = new DaemonManager({
+        rootDir: tempDir,
+        pidFile,
+        logFile,
+        processChecker: (pid) => fakeProcessTable.get(pid) || { running: false }
+      });
+
+      writePidFileAtomic(pidFile, 4300, DAEMON_FLAG_MARKER);
+      const status = manager.getStatus();
+
+      expect(status.running).toBe(false);
+      expect(status.stalePidCleaned).toBe(4300);
+      expect(fs.existsSync(pidFile)).toBe(false);
+    });
+
+    it('supports legacy fallback for PID file written by previous version without marker', () => {
+      const fakeProcessTable = new Map<number, ProcessInfo>([
+        [
+          4400,
+          {
+            running: true,
+            command: 'node /repo/packages/cli/dist/index.js watch --dir /logs',
+            uptimeSec: 120
+          }
+        ]
+      ]);
+
+      const manager = new DaemonManager({
+        rootDir: tempDir,
+        pidFile,
+        logFile,
+        processChecker: (pid) => fakeProcessTable.get(pid) || { running: false }
+      });
+
+      // Legacy PID file: no marker line
+      writePidFileAtomic(pidFile, 4400);
+      const status = manager.getStatus();
+
+      // Legacy fallback recognizes valid watcher command
+      expect(status.running).toBe(true);
+      expect(status.pid).toBe(4400);
+      expect(fs.existsSync(pidFile)).toBe(true);
+    });
+
+    it('legacy fallback cleans up stale PID if legacy PID was reused by tokenpal logs -f', () => {
+      const fakeProcessTable = new Map<number, ProcessInfo>([
+        [
+          4500,
+          {
+            running: true,
+            command: 'node /repo/packages/cli/dist/index.js logs -f',
+            uptimeSec: 10
+          }
+        ]
+      ]);
+
+      let staleReported: { pid: number; reason: string } | null = null;
+
+      const manager = new DaemonManager({
+        rootDir: tempDir,
+        pidFile,
+        logFile,
+        processChecker: (pid) => fakeProcessTable.get(pid) || { running: false },
+        onStalePid: (pid, reason) => {
+          staleReported = { pid, reason };
+        }
+      });
+
+      // Legacy PID file: no marker line
+      writePidFileAtomic(pidFile, 4500);
+      const status = manager.getStatus();
+
+      expect(status.running).toBe(false);
+      expect(status.stalePidCleaned).toBe(4500);
+      expect(fs.existsSync(pidFile)).toBe(false);
+      expect(staleReported?.pid).toBe(4500);
       expect(staleReported?.reason).toContain('pid reused by another command');
     });
   });
@@ -429,4 +608,90 @@ describe('Daemon Management', () => {
       expect(fs.existsSync(pidFile)).toBe(false);
     });
   });
+
+  describe('Overlay process self-termination on watcher death or IPC disconnect', () => {
+    const overlayDistPath = path.resolve(__dirname, '../../overlay/dist/main.js');
+    let electronBin: string | null = null;
+
+    try {
+      const req = createRequire(import.meta.url);
+      const resolved = req('electron');
+      if (typeof resolved === 'string' && fs.existsSync(resolved)) {
+        electronBin = resolved;
+      }
+    } catch {
+      // ignore
+    }
+
+    it('exits automatically when stdin pipe closes', async () => {
+      if (!electronBin || !fs.existsSync(overlayDistPath)) {
+        return; // skip if electron binary or dist is not built
+      }
+
+      const child = child_process.spawn(electronBin, [overlayDistPath], {
+        stdio: ['pipe', 'ignore', 'ignore'],
+        env: {
+          ...process.env,
+          TOKENPAL_PARENT_PID: process.pid.toString()
+        }
+      });
+
+      const exitPromise = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+        child.on('exit', (code, signal) => resolve({ code, signal }));
+      });
+
+      // Close stdin after a brief moment
+      setTimeout(() => {
+        child.stdin?.end();
+      }, 300);
+
+      const result = await Promise.race([
+        exitPromise,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000))
+      ]);
+
+      expect(result).not.toBeNull();
+      if (!child.killed) {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // ignore
+        }
+      }
+    }, 10000);
+
+    it('exits automatically when parent watcher PID dies (orphan prevention)', async () => {
+      if (!electronBin || !fs.existsSync(overlayDistPath)) {
+        return;
+      }
+
+      // Non-existent parent PID 999999
+      const child = child_process.spawn(electronBin, [overlayDistPath], {
+        stdio: ['pipe', 'ignore', 'ignore'],
+        env: {
+          ...process.env,
+          TOKENPAL_PARENT_PID: '999999'
+        }
+      });
+
+      const exitPromise = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+        child.on('exit', (code, signal) => resolve({ code, signal }));
+      });
+
+      const result = await Promise.race([
+        exitPromise,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000))
+      ]);
+
+      expect(result).not.toBeNull();
+      if (!child.killed) {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // ignore
+        }
+      }
+    }, 10000);
+  });
 });
+

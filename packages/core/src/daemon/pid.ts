@@ -7,34 +7,60 @@ import { ProcessChecker, ProcessInfo, ProcessKiller } from './types.js';
  * Atomically writes a PID file by first writing to a unique temp file in the same
  * directory and then renaming it.
  */
-export function writePidFileAtomic(pidPath: string, pid: number): void {
+export const DAEMON_FLAG_MARKER = '--tokenpal-daemon';
+
+export interface PidFileInfo {
+  pid: number;
+  marker?: string;
+}
+
+/**
+ * Atomically writes a PID file by first writing to a unique temp file in the same
+ * directory and then renaming it. Supports optional unique daemon marker line.
+ */
+export function writePidFileAtomic(pidPath: string, pid: number, marker?: string): void {
   const dir = path.dirname(pidPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
   const tempPath = path.join(dir, `.tokenpal.pid.tmp.${process.pid}.${Date.now()}`);
-  fs.writeFileSync(tempPath, `${pid}\n`, 'utf-8');
+  const content = marker ? `${pid}\n${marker}\n` : `${pid}\n`;
+  fs.writeFileSync(tempPath, content, 'utf-8');
   fs.renameSync(tempPath, pidPath);
+}
+
+/**
+ * Reads detailed PID file information (PID and optional daemon marker).
+ */
+export function readPidFileInfo(pidPath: string): PidFileInfo | null {
+  if (!fs.existsSync(pidPath)) {
+    return null;
+  }
+  try {
+    const raw = fs.readFileSync(pidPath, 'utf-8');
+    const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) {
+      removePidFile(pidPath);
+      return null;
+    }
+    const pid = parseInt(lines[0], 10);
+    if (isNaN(pid) || pid <= 0) {
+      removePidFile(pidPath);
+      return null;
+    }
+    const marker = lines.length > 1 ? lines[1] : undefined;
+    return { pid, marker };
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Reads the PID from a file. Returns null if missing or invalid.
  */
 export function readPidFile(pidPath: string): number | null {
-  if (!fs.existsSync(pidPath)) {
-    return null;
-  }
-  try {
-    const content = fs.readFileSync(pidPath, 'utf-8').trim();
-    const pid = parseInt(content, 10);
-    if (isNaN(pid) || pid <= 0) {
-      removePidFile(pidPath);
-      return null;
-    }
-    return pid;
-  } catch {
-    return null;
-  }
+  const info = readPidFileInfo(pidPath);
+  return info ? info.pid : null;
 }
 
 /**
@@ -54,7 +80,8 @@ export function removePidFile(pidPath: string): boolean {
 
 /**
  * Checks whether a command string matches TokenPal's watcher.
- * Guards against PID reuse by other applications after a crash or reboot.
+ * Used as a fallback check for PID files written by the previous version without a marker.
+ * Strictly excludes other tokenpal commands such as 'tokenpal logs', 'tokenpal status', etc.
  */
 export function isTokenPalWatcherCommand(command?: string): boolean {
   if (!command) return false;
@@ -66,9 +93,10 @@ export function isTokenPalWatcherCommand(command?: string): boolean {
   const hasWatcherAction =
     lower.includes('watch') ||
     lower.includes('start') ||
-    lower.includes('dist/index.js') ||
-    lower.includes('bin/tokenpal');
-  return hasTokenPal && hasWatcherAction;
+    lower.includes('--tokenpal-daemon');
+  // Exclude other CLI subcommands like 'tokenpal logs', 'tokenpal status', 'tokenpal handoff'
+  const isOtherSubcommand = /(?:tokenpal|index\.js)\s+(?:logs|status|handoff|demo|replay|autostart)(?:\s|$)/i.test(command);
+  return hasTokenPal && hasWatcherAction && !isOtherSubcommand;
 }
 
 /**

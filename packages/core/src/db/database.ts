@@ -83,6 +83,17 @@ export class TokenPalDatabase {
   }
 
   public insertAlert(alert: Alert): void {
+    if (!this.getSession(alert.session_id)) {
+      this.upsertSession({
+        id: alert.session_id,
+        agent: 'meter',
+        project_path: null,
+        started_at: alert.ts,
+        last_event_at: alert.ts,
+        model: null,
+        status: 'active'
+      });
+    }
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO alerts (id, session_id, ts, rule, severity, shown, action_taken)
       VALUES (@id, @session_id, @ts, @rule, @severity, @shown, @action_taken)

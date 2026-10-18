@@ -1,6 +1,7 @@
 import * as child_process from 'node:child_process';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import type { OverlayAlertPayload } from './types.js';
 import { generateLayerAHandoff } from '../handoff/generator.js';
@@ -64,15 +65,37 @@ export class OverlayLauncher {
     return null;
   }
 
+  private findElectronPath(entryPath: string): string {
+    if (process.env.ELECTRON_PATH && fs.existsSync(process.env.ELECTRON_PATH)) {
+      return process.env.ELECTRON_PATH;
+    }
+    try {
+      const req = createRequire(entryPath);
+      const resolved = req('electron');
+      if (typeof resolved === 'string' && fs.existsSync(resolved)) {
+        return resolved;
+      }
+    } catch {
+      // ignore
+    }
+    return 'electron';
+  }
+
   private spawnOverlay(initialPayload?: OverlayAlertPayload): void {
     const entryPath = this.findOverlayEntry();
     if (!entryPath) return;
 
+    const electronBin = this.findElectronPath(entryPath);
+    const isDirectBin = fs.existsSync(electronBin);
+    const spawnCmd = isDirectBin ? electronBin : 'npx';
+    const spawnArgs = isDirectBin ? [entryPath] : ['--yes', 'electron', entryPath];
+
     try {
-      this.child = child_process.spawn('npx', ['--yes', 'electron', entryPath], {
-        stdio: ['pipe', 'pipe', 'ignore'],
+      this.child = child_process.spawn(spawnCmd, spawnArgs, {
+        stdio: ['pipe', 'pipe', 'pipe'],
         env: {
           ...process.env,
+          TOKENPAL_PARENT_PID: process.pid.toString(),
           TOKENPAL_OVERLAY_INITIAL: initialPayload ? JSON.stringify(initialPayload) : ''
         }
       });

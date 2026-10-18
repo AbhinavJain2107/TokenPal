@@ -18,8 +18,10 @@ import {
   getDefaultProcessKiller,
   isTokenPalWatcherCommand,
   readPidFile,
+  readPidFileInfo,
   removePidFile,
-  writePidFileAtomic
+  writePidFileAtomic,
+  DAEMON_FLAG_MARKER
 } from './pid.js';
 
 export const DEFAULT_LOG_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -106,11 +108,12 @@ export class DaemonManager {
    * corresponds to TokenPal's watcher. If stale or reused, removes the PID file.
    */
   public getStatus(): DaemonStatus {
-    const pid = readPidFile(this.pidFile);
-    if (!pid) {
+    const pidInfo = readPidFileInfo(this.pidFile);
+    if (!pidInfo) {
       return { running: false };
     }
 
+    const { pid, marker } = pidInfo;
     const info = this.processChecker(pid);
 
     // 1. Process does not exist
@@ -121,10 +124,21 @@ export class DaemonManager {
     }
 
     // 2. Process exists, check if command line matches TokenPal
-    if (!isTokenPalWatcherCommand(info.command)) {
-      removePidFile(this.pidFile);
-      this.onStalePid?.(pid, `pid reused by another command (${info.command || 'unknown'})`);
-      return { running: false, stalePidCleaned: pid };
+    if (marker) {
+      // Tightened check: require the unique marker (e.g. '--tokenpal-daemon') in command
+      const hasMarker = info.command ? info.command.includes(marker) : false;
+      if (!hasMarker) {
+        removePidFile(this.pidFile);
+        this.onStalePid?.(pid, `pid reused by another command (${info.command || 'unknown'})`);
+        return { running: false, stalePidCleaned: pid };
+      }
+    } else {
+      // Fallback only for PIDs written by the previous version without a marker
+      if (!isTokenPalWatcherCommand(info.command)) {
+        removePidFile(this.pidFile);
+        this.onStalePid?.(pid, `pid reused by another command (${info.command || 'unknown'})`);
+        return { running: false, stalePidCleaned: pid };
+      }
     }
 
     // 3. Valid active TokenPal watcher daemon
@@ -164,7 +178,7 @@ export class DaemonManager {
 
     if (options.foreground) {
       // In foreground mode, the current process acts as the watcher
-      writePidFileAtomic(this.pidFile, process.pid);
+      writePidFileAtomic(this.pidFile, process.pid, DAEMON_FLAG_MARKER);
       return { started: true, pid: process.pid };
     }
 
@@ -176,8 +190,8 @@ export class DaemonManager {
       return { started: false, error: `Failed to open log file ${this.logFile}: ${err.message}` };
     }
 
-    const args = [this.cliPath, 'watch'];
-    if (options.ui) args.push('--ui');
+    const args = [this.cliPath, 'watch', DAEMON_FLAG_MARKER];
+    if (options.ui !== false) args.push('--ui');
     if (options.watchDir) args.push('--dir', options.watchDir);
     if (options.dbPath) args.push('--db', options.dbPath);
     if (options.configPath) args.push('--config', options.configPath);
@@ -204,8 +218,8 @@ export class DaemonManager {
       return { started: false, error: 'Spawn failed to return a valid process ID' };
     }
 
-    // Atomically write PID file
-    writePidFileAtomic(this.pidFile, childPid);
+    // Atomically write PID file with marker
+    writePidFileAtomic(this.pidFile, childPid, DAEMON_FLAG_MARKER);
 
     // Unref child so parent process can exit independently
     child.unref();

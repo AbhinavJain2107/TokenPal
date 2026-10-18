@@ -47,6 +47,7 @@ export function generateLaunchAgentPlist(options: {
         <string>${options.cliPath}</string>
         <string>start</string>
         <string>--foreground</string>
+        <string>--tokenpal-daemon</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -61,6 +62,7 @@ export function generateLaunchAgentPlist(options: {
 
 /**
  * Enables autostart via macOS launchd LaunchAgent.
+ * Prefers modern `launchctl bootstrap gui/$(id -u)` with `launchctl load -w` as fallback.
  */
 export function enableAutostart(options: AutostartOptions = {}): AutostartResult {
   if (process.platform !== 'darwin') {
@@ -82,12 +84,19 @@ export function enableAutostart(options: AutostartOptions = {}): AutostartResult
     fs.mkdirSync(plistDir, { recursive: true });
   }
 
-  // If already registered, safely unload before rewriting
+  const uid = typeof process.getuid === 'function' ? process.getuid() : 501;
+  const domainTarget = `gui/${uid}`;
+
+  // If already registered, safely bootout/unload before rewriting
   if (fs.existsSync(plistPath)) {
     try {
-      child_process.execSync(`launchctl unload -w ${plistPath}`, { stdio: ['ignore', 'ignore', 'ignore'] });
+      child_process.execSync(`launchctl bootout ${domainTarget} ${plistPath}`, { stdio: ['ignore', 'ignore', 'ignore'] });
     } catch {
-      // ignore
+      try {
+        child_process.execSync(`launchctl unload -w ${plistPath}`, { stdio: ['ignore', 'ignore', 'ignore'] });
+      } catch {
+        // ignore
+      }
     }
   }
 
@@ -100,30 +109,46 @@ export function enableAutostart(options: AutostartOptions = {}): AutostartResult
 
   fs.writeFileSync(plistPath, plistContent, 'utf-8');
 
-  // Load via launchctl
-  const command = `launchctl load -w ${plistPath}`;
+  // Prefer modern launchctl bootstrap gui/$(id -u), fallback to legacy load -w
+  const modernCommand = `launchctl bootstrap ${domainTarget} ${plistPath}`;
+  const fallbackCommand = `launchctl load -w ${plistPath}`;
+  let commandExecuted = modernCommand;
+
   try {
-    child_process.execSync(command, { stdio: ['ignore', 'pipe', 'pipe'] });
+    child_process.execSync(modernCommand, { stdio: ['ignore', 'pipe', 'pipe'] });
     return {
       success: true,
       supported: true,
       plistPath,
-      commandExecuted: command,
+      commandExecuted: modernCommand,
       message: `Autostart enabled via LaunchAgent: ${plistPath}`
     };
-  } catch (err: any) {
-    return {
-      success: false,
-      supported: true,
-      plistPath,
-      commandExecuted: command,
-      error: `Failed to execute launchctl: ${err.message}`
-    };
+  } catch {
+    commandExecuted = fallbackCommand;
+    try {
+      child_process.execSync(fallbackCommand, { stdio: ['ignore', 'pipe', 'pipe'] });
+      return {
+        success: true,
+        supported: true,
+        plistPath,
+        commandExecuted: fallbackCommand,
+        message: `Autostart enabled via LaunchAgent (fallback): ${plistPath}`
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        supported: true,
+        plistPath,
+        commandExecuted,
+        error: `Failed to execute launchctl: ${err.message}`
+      };
+    }
   }
 }
 
 /**
  * Disables autostart by unloading the launchd LaunchAgent and removing the plist.
+ * Prefers modern `launchctl bootout gui/$(id -u)` with `launchctl unload -w` as fallback.
  */
 export function disableAutostart(options: AutostartOptions = {}): AutostartResult {
   if (process.platform !== 'darwin') {
@@ -137,15 +162,24 @@ export function disableAutostart(options: AutostartOptions = {}): AutostartResul
   const plistDir = options.plistDir || path.join(os.homedir(), 'Library', 'LaunchAgents');
   const label = options.label || LAUNCH_AGENT_LABEL;
   const plistPath = path.join(plistDir, `${label}.plist`);
+  const uid = typeof process.getuid === 'function' ? process.getuid() : 501;
+  const domainTarget = `gui/${uid}`;
 
   let commandExecuted: string | undefined;
   if (fs.existsSync(plistPath)) {
-    const command = `launchctl unload -w ${plistPath}`;
-    commandExecuted = command;
+    const modernCommand = `launchctl bootout ${domainTarget} ${plistPath}`;
+    const fallbackCommand = `launchctl unload -w ${plistPath}`;
+    commandExecuted = modernCommand;
+
     try {
-      child_process.execSync(command, { stdio: ['ignore', 'pipe', 'pipe'] });
+      child_process.execSync(modernCommand, { stdio: ['ignore', 'pipe', 'pipe'] });
     } catch {
-      // ignore if already unloaded
+      try {
+        child_process.execSync(fallbackCommand, { stdio: ['ignore', 'pipe', 'pipe'] });
+        commandExecuted = fallbackCommand;
+      } catch {
+        // ignore if already unloaded
+      }
     }
 
     try {

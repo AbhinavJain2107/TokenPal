@@ -179,6 +179,8 @@ ipcMain.on('action:dismiss', () => {
 
 // Stdin listener from watcher process
 process.stdin.setEncoding('utf-8');
+process.stdin.resume();
+
 process.stdin.on('data', (chunk) => {
   const lines = chunk.toString().split('\n');
   for (const line of lines) {
@@ -206,8 +208,44 @@ process.stdin.on('data', (chunk) => {
   }
 });
 
+// Self-terminate if stdin pipe closes (watcher terminates or IPC disconnects)
+process.stdin.on('end', () => {
+  app.quit();
+});
+process.stdin.on('close', () => {
+  app.quit();
+});
+process.stdin.on('error', () => {
+  app.quit();
+});
+
+// Additional safeguard: parent PID liveness check (e.g. if watcher is kill -9'd)
+const parentPidStr = process.env.TOKENPAL_PARENT_PID;
+if (parentPidStr) {
+  const parentPid = parseInt(parentPidStr, 10);
+  if (!isNaN(parentPid) && parentPid > 0) {
+    const parentWatcherInterval = setInterval(() => {
+      try {
+        process.kill(parentPid, 0);
+      } catch {
+        clearInterval(parentWatcherInterval);
+        app.quit();
+      }
+    }, 1000);
+  }
+}
+
 // Parse initial arguments if passed directly via CLI
 app.whenReady().then(() => {
+  // On macOS, run as an accessory app so it can float over spaces without taking dock focus
+  if (process.platform === 'darwin' && app.dock) {
+    try {
+      app.dock.hide();
+    } catch {
+      // ignore
+    }
+  }
+
   createWindow();
   createTray();
 
@@ -217,7 +255,11 @@ app.whenReady().then(() => {
     try {
       const parsed: OverlayAlertPayload = JSON.parse(initialData);
       mainWindow.webContents.on('did-finish-load', () => {
-        mainWindow?.webContents.send('overlay:update', parsed);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.showInactive();
+          mainWindow.webContents.send('overlay:update', parsed);
+          updateTray(parsed);
+        }
       });
     } catch {
       // ignore
@@ -226,7 +268,5 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  app.quit();
 });

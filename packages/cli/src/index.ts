@@ -18,7 +18,8 @@ import {
   DaemonManager,
   enableAutostart,
   disableAutostart,
-  writePidFileAtomic
+  writePidFileAtomic,
+  DAEMON_FLAG_MARKER
 } from '@tokenpal/core';
 
 const program = new Command();
@@ -50,8 +51,8 @@ async function runWatcherForeground(options: {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
-  // Atomically write PID file so status and stop can manage instances
-  writePidFileAtomic(daemonManager.getPidFilePath(), process.pid);
+  // Atomically write PID file with unique marker so status and stop can safely manage instances
+  writePidFileAtomic(daemonManager.getPidFilePath(), process.pid, DAEMON_FLAG_MARKER);
 
   const thresholds = loadRuleThresholds(options.config);
   const engine = new RulesEngine(thresholds);
@@ -59,7 +60,7 @@ async function runWatcherForeground(options: {
   const customDirs = options.dir ? [path.resolve(options.dir)] : [];
   const watcher = new SessionWatcher({ db, customDirs, pollIntervalMs: 1000 });
   const alertManager = new MeterAlertManager();
-  const launcher = options.ui ? new OverlayLauncher() : null;
+  const launcher = options.ui !== false ? new OverlayLauncher() : null;
 
   console.log('='.repeat(75));
   console.log(' TokenPal Guardian Watcher started (Rate Limit Meter Redesign Active)');
@@ -118,15 +119,19 @@ async function runWatcherForeground(options: {
       console.log(`  Reason : ${alert.reason}`);
       console.log(`  Action : ${alert.advice}\n`);
 
-      db.insertAlert({
-        id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        session_id: 'meter',
-        ts: new Date().toISOString(),
-        rule: alert.rule || 'projected_exhaustion',
-        severity: alert.state,
-        shown: 1,
-        action_taken: null
-      });
+      try {
+        db.insertAlert({
+          id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          session_id: 'meter',
+          ts: new Date().toISOString(),
+          rule: alert.rule || 'projected_exhaustion',
+          severity: alert.state,
+          shown: 1,
+          action_taken: null
+        });
+      } catch (err) {
+        console.error('[WARN] Failed to record projected exhaustion alert in DB:', err);
+      }
 
       if (launcher) {
         launcher.showAlert(alert);
@@ -163,15 +168,19 @@ async function runWatcherForeground(options: {
         console.log(`  Reason : ${alert.reason}`);
         console.log(`  Action : ${alert.advice}\n`);
 
-        db.insertAlert({
-          id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          session_id: 'meter',
-          ts: new Date().toISOString(),
-          rule: alert.rule || 'single_request_high',
-          severity: alert.state,
-          shown: 1,
-          action_taken: null
-        });
+        try {
+          db.insertAlert({
+            id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            session_id: cost.sessionId || 'meter',
+            ts: new Date().toISOString(),
+            rule: alert.rule || 'single_request_high',
+            severity: alert.state,
+            shown: 1,
+            action_taken: null
+          });
+        } catch (err) {
+          console.error('[WARN] Failed to record request cost alert in DB:', err);
+        }
 
         if (launcher) {
           launcher.showAlert(alert);
@@ -257,8 +266,10 @@ program
   .option('--db <path>', 'Path to SQLite database', path.join(os.homedir(), '.tokenpal', 'tokenpal.sqlite'))
   .option('--config <path>', 'Path to custom config.json')
   .option('--ui', 'Launch desktop overlay mascot during alerts')
+  .option('--no-ui', 'Disable desktop overlay mascot during alerts')
   .option('--legacy-rules', 'Enable retired context growth alerts (off by default)')
   .option('--foreground', 'Run watcher directly in the terminal (foreground mode)')
+  .option('--tokenpal-daemon', 'Internal marker indicating daemon process')
   .action(async (options) => {
     if (options.foreground) {
       const currentStatus = daemonManager.getStatus();
@@ -271,7 +282,7 @@ program
     }
 
     const result = await daemonManager.start({
-      ui: options.ui,
+      ui: options.ui !== false,
       watchDir: options.dir,
       dbPath: options.db,
       configPath: options.config,
@@ -318,6 +329,7 @@ program
   .option('--db <path>', 'Path to SQLite database', path.join(os.homedir(), '.tokenpal', 'tokenpal.sqlite'))
   .option('--config <path>', 'Path to custom config.json')
   .option('--ui', 'Launch desktop overlay mascot during alerts')
+  .option('--no-ui', 'Disable desktop overlay mascot during alerts')
   .option('--legacy-rules', 'Enable retired context growth alerts (off by default)')
   .action(async (options) => {
     const stopped = await daemonManager.stop();
@@ -326,7 +338,7 @@ program
     }
 
     const started = await daemonManager.start({
-      ui: options.ui,
+      ui: options.ui !== false,
       watchDir: options.dir,
       dbPath: options.db,
       configPath: options.config,
@@ -357,8 +369,10 @@ program
   .option('-d, --dir <path>', 'Custom directory to watch for session logs')
   .option('--db <path>', 'Path to SQLite database', path.join(os.homedir(), '.tokenpal', 'tokenpal.sqlite'))
   .option('--config <path>', 'Path to custom config.json')
-  .option('--ui', 'Launch desktop overlay mascot (defaults to terminal-only if omitted)')
+  .option('--ui', 'Launch desktop overlay mascot during alerts')
+  .option('--no-ui', 'Disable desktop overlay mascot during alerts')
   .option('--legacy-rules', 'Enable retired context growth alerts (off by default)')
+  .option('--tokenpal-daemon', 'Internal marker indicating daemon process')
   .action(async (options) => {
     await runWatcherForeground(options);
   });
