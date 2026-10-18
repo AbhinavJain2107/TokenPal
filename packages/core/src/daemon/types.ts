@@ -1,5 +1,6 @@
 export interface ProcessInfo {
   running: boolean;
+  pid?: number;
   command?: string;
   uptimeSec?: number;
 }
@@ -28,6 +29,7 @@ export interface DaemonStopResult {
   wasRunning: boolean;
   pid?: number;
   forced?: boolean;
+  remainingOverlayProcesses?: ProcessInfo[];
 }
 
 export interface DaemonManagerOptions {
@@ -35,9 +37,12 @@ export interface DaemonManagerOptions {
   pidFile?: string;
   logFile?: string;
   rotatedLogFile?: string;
+  socketPath?: string;
   cliPath?: string;
   processChecker?: ProcessChecker;
   processKiller?: ProcessKiller;
   childProcessFinder?: (pid: number) => number[];
+  overlayProcessFinder?: () => ProcessInfo[];
   onStalePid?: (pid: number, reason: string) => void;
 }
+

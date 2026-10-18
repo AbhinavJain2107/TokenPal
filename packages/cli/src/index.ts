@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as fs from 'node:fs';
+import * as net from 'node:net';
 import {
   TokenPalDatabase,
   SessionWatcher,
@@ -13,6 +14,7 @@ import {
   generateLayerAHandoff,
   MeterAlertManager,
   OverlayLauncher,
+  OverlayAlertPayload,
   readLatestMeterStatus,
   getDemoStates,
   DaemonManager,
@@ -61,6 +63,62 @@ async function runWatcherForeground(options: {
   const watcher = new SessionWatcher({ db, customDirs, pollIntervalMs: 1000 });
   const alertManager = new MeterAlertManager();
   const launcher = options.ui !== false ? new OverlayLauncher() : null;
+
+  // Local control server for daemon IPC commands (e.g. tokenpal test-alert)
+  const socketPath = daemonManager.getSocketPath();
+  if (process.platform !== 'win32' && fs.existsSync(socketPath)) {
+    try {
+      fs.unlinkSync(socketPath);
+    } catch {
+      // ignore
+    }
+  }
+
+  const controlServer = net.createServer((socket) => {
+    let buffer = '';
+    socket.on('data', (chunk) => {
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const req = JSON.parse(line.trim());
+          if (req.command === 'test-alert') {
+            const testAlert: OverlayAlertPayload = {
+              state: 'yellow',
+              rule: 'test_alert',
+              reason: 'TEST ALERT: Verification from running TokenPal daemon',
+              advice: 'This is a test alert verifying desktop overlay activation via the background daemon control channel.',
+              meter: {
+                usedPercent: 42,
+                percentBar: '████░░░░░░',
+                resetsAtLocal: 'Sunday, 12:00 PM',
+                timeToResetFormatted: '2d 4h',
+                planType: 'prolite',
+                projectedExhaustionText: 'Test projection: quota healthy'
+              }
+            };
+            if (launcher) {
+              launcher.showAlert(testAlert);
+            }
+            socket.write(JSON.stringify({ status: 'ok', message: 'Test alert sent to overlay' }) + '\n');
+          } else {
+            socket.write(JSON.stringify({ status: 'unknown_command' }) + '\n');
+          }
+        } catch {
+          socket.write(JSON.stringify({ status: 'error', error: 'Invalid JSON command' }) + '\n');
+        }
+      }
+    });
+  });
+
+  controlServer.listen(socketPath, () => {
+    // control server ready
+  });
+  controlServer.on('error', () => {
+    // ignore socket bind errors
+  });
 
   console.log('='.repeat(75));
   console.log(' TokenPal Guardian Watcher started (Rate Limit Meter Redesign Active)');
@@ -122,15 +180,15 @@ async function runWatcherForeground(options: {
       try {
         db.insertAlert({
           id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          session_id: 'meter',
+          session_id: null,
           ts: new Date().toISOString(),
           rule: alert.rule || 'projected_exhaustion',
           severity: alert.state,
           shown: 1,
           action_taken: null
         });
-      } catch (err) {
-        console.error('[WARN] Failed to record projected exhaustion alert in DB:', err);
+      } catch (err: any) {
+        console.error(`[WARN] Failed to record projected exhaustion alert in DB: ${err?.message || err} [context: rule=${alert.rule || 'projected_exhaustion'}, state=${alert.state}]`);
       }
 
       if (launcher) {
@@ -171,15 +229,15 @@ async function runWatcherForeground(options: {
         try {
           db.insertAlert({
             id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            session_id: cost.sessionId || 'meter',
+            session_id: cost.sessionId || null,
             ts: new Date().toISOString(),
             rule: alert.rule || 'single_request_high',
             severity: alert.state,
             shown: 1,
             action_taken: null
           });
-        } catch (err) {
-          console.error('[WARN] Failed to record request cost alert in DB:', err);
+        } catch (err: any) {
+          console.error(`[WARN] Failed to record request cost alert in DB: ${err?.message || err} [context: rule=${alert.rule || 'single_request_high'}, state=${alert.state}, turn=${cost.turnId}]`);
         }
 
         if (launcher) {
@@ -245,6 +303,14 @@ async function runWatcherForeground(options: {
     if (isCleaningUp) return;
     isCleaningUp = true;
     clearInterval(logRotateTimer);
+    try {
+      controlServer.close();
+      if (process.platform !== 'win32' && fs.existsSync(socketPath)) {
+        fs.unlinkSync(socketPath);
+      }
+    } catch {
+      // ignore
+    }
     console.log('\nStopping TokenPal watcher...');
     watcher.stop();
     if (launcher) {
@@ -317,9 +383,36 @@ program
     }
     if (!result.wasRunning) {
       console.log('not running');
+    } else {
+      console.log(`TokenPal daemon stopped (pid ${result.pid}).`);
+    }
+
+    const remaining = result.remainingOverlayProcesses || [];
+    if (remaining.length === 0) {
+      console.log('Overlay processes: none remaining.');
+    } else {
+      console.log(`Overlay processes found: ${remaining.map((p) => `pid ${p.pid} (${p.command || 'unknown'})`).join(', ')}.`);
+    }
+    process.exit(0);
+  });
+
+program
+  .command('test-alert')
+  .description('Send a labeled TEST alert through the running daemon to verify the overlay opens')
+  .action(async () => {
+    const status = daemonManager.getStatus();
+    if (!status.running || !status.pid) {
+      console.log('TokenPal daemon is not running.');
       process.exit(0);
     }
-    console.log(`TokenPal daemon stopped (pid ${result.pid}).`);
+
+    try {
+      await daemonManager.sendControlCommand({ command: 'test-alert' });
+      console.log(`Sent TEST alert to running TokenPal daemon (pid ${status.pid}). Overlay opening...`);
+    } catch (err: any) {
+      console.error(`Failed to send test alert to daemon: ${err?.message || err}`);
+      process.exit(1);
+    }
   });
 
 program

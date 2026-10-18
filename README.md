@@ -41,9 +41,13 @@ tokenpal stop
 tokenpal demo
 ```
 
-### Native Build Note (`better-sqlite3`)
+### Native Build & Electron Binaries (`onlyBuiltDependencies`)
 
-TokenPal relies on `better-sqlite3` for high-performance zero-latency local SQLite operations. It compiles native C++ bindings upon install.
+TokenPal relies on `better-sqlite3` for zero-latency local SQLite operations and `electron` for the desktop overlay companion.
+In modern pnpm (v10+), install lifecycle scripts are blocked by default for security. TokenPal configures `"pnpm": { "onlyBuiltDependencies": ["better-sqlite3", "esbuild", "electron"] }` in root `package.json`. This ensures that on a fresh `pnpm install`:
+- `better-sqlite3` native C++ bindings are compiled via node-gyp automatically.
+- `electron` downloads its platform binary automatically.
+Zero manual rebuild or postinstall steps are required from a fresh clone.
 
 * **Prerequisites**: Python 3 and a C++ compiler toolchain:
   * **macOS**: `xcode-select --install`
@@ -64,7 +68,7 @@ TokenPal relies on `better-sqlite3` for high-performance zero-latency local SQLi
 ## CLI Commands
 
 ### 1. `tokenpal start`
-Runs the watcher as a detached background daemon in its own session, redirecting stdio to `~/.tokenpal/tokenpal.log`, writes its PID atomically to `~/.tokenpal/tokenpal.pid`, verifies process liveness, and prints `started (pid N)`. If already running, prints that and exits 0 without spawning a second instance. Safe PID validation guards against PID reuse after a reboot or crash, cleaning stale PID files automatically.
+Runs the watcher as a detached background daemon in its own session, redirecting stdio to `~/.tokenpal/tokenpal.log`, writes its PID atomically to `~/.tokenpal/tokenpal.pid`, verifies process liveness, and prints `started (pid N)`. By default, the desktop mascot overlay opens whenever an alert triggers; pass `--no-ui` to disable the overlay. If already running, prints that and exits 0 without spawning a second instance. Safe PID validation guards against PID reuse after a reboot or crash, cleaning stale PID files automatically.
 
 ```bash
 tokenpal start [options]
@@ -72,24 +76,31 @@ tokenpal start [options]
   -d, --dir <path>     Watch a specific directory (default: ~/.codex/sessions)
   --db <path>          Path to SQLite database (default: ~/.tokenpal/tokenpal.sqlite)
   --config <path>      Path to custom config.json
-  --ui                 Launch desktop mascot overlay during alerts
+  --no-ui              Disable desktop overlay mascot during alerts (enabled by default)
 ```
 
 ### 2. `tokenpal stop`
-Stops the running TokenPal daemon. Sends SIGTERM, waits up to ~5 seconds for clean termination, and escalates to SIGKILL if necessary. Recursively terminates any child processes (such as Electron overlay and helper processes) so zero orphans remain, and cleanly deletes `~/.tokenpal/tokenpal.pid`. If not running, prints `not running` and exits 0.
+Stops the running TokenPal daemon. Sends SIGTERM, waits up to ~5 seconds for clean termination, and escalates to SIGKILL if necessary. Recursively terminates any child processes (such as Electron overlay and helper processes) and verifies no remaining process command line includes the overlay entry (`overlay/dist/main.js`), printing what it found (`Overlay processes: none remaining.`). Cleanly deletes `~/.tokenpal/tokenpal.pid`. If not running, prints `not running` and exits 0.
 
 ```bash
 tokenpal stop
 ```
 
-### 3. `tokenpal restart`
+### 3. `tokenpal test-alert`
+Sends a clearly labeled "TEST" alert through the running daemon via a local control socket (`~/.tokenpal/tokenpal.sock`) so you can verify the overlay opens from the daemon path without reading session logs. If the daemon is not running, prints `TokenPal daemon is not running.` and exits immediately.
+
+```bash
+tokenpal test-alert
+```
+
+### 4. `tokenpal restart`
 Stops the running daemon and starts a fresh background instance.
 
 ```bash
 tokenpal restart [options]
 ```
 
-### 4. `tokenpal status`
+### 5. `tokenpal status`
 First line displays the daemon state (`TokenPal daemon: running (pid N, uptime ...)` or `TokenPal daemon: stopped`). Followed by the complete rate limits meter (percent, local reset countdown & timestamp, plan, last reset in local time, and early-reset count) read directly from the latest session event in `~/.codex/sessions`. Works even when the daemon is stopped. Zero message text.
 
 ```bash
@@ -99,7 +110,7 @@ tokenpal status [options]
   --json               Output machine-readable JSON (preserves UTC ISO timestamps)
 ```
 
-### 5. `tokenpal logs`
+### 6. `tokenpal logs`
 Prints the last 50 lines of `~/.tokenpal/tokenpal.log` by default. Use `-f` to follow log output in real time. Log files are capped at ~5 MB and automatically rotated to `tokenpal.log.1`. No prompt or message text is ever logged—only token counts and guardian metadata.
 
 ```bash
@@ -108,7 +119,7 @@ tokenpal logs [options]
   -f, --follow         Follow log output in real time
 ```
 
-### 6. `tokenpal autostart on|off` (macOS)
+### 7. `tokenpal autostart on|off` (macOS)
 Creates or removes a launchd LaunchAgent at `~/Library/LaunchAgents/com.tokenpal.watcher.plist` with `RunAtLoad = true` and NO `KeepAlive`, using absolute paths to `node` and the CLI so `tokenpal stop` stays stopped until next login. On non-macOS platforms, prints `not supported yet`. Reports the exact `launchctl` command executed.
 
 ```bash
@@ -116,32 +127,32 @@ tokenpal autostart on    # launchctl load -w ~/Library/LaunchAgents/com.tokenpal
 tokenpal autostart off   # launchctl unload -w ~/Library/LaunchAgents/com.tokenpal.watcher.plist
 ```
 
-### 7. `tokenpal watch`
-Monitors session logs in foreground mode. Emits turn updates with context size (input tokens), cached token counts, output tokens, rate limits meter with countdown, and proactive alerts. Handles SIGINT/SIGTERM cleanly.
+### 8. `tokenpal watch`
+Monitors session logs in foreground mode. Emits turn updates with context size (input tokens), cached token counts, output tokens, rate limits meter with countdown, and proactive alerts. Desktop overlay opens by default during alerts; pass `--no-ui` to disable. Handles SIGINT/SIGTERM cleanly.
 
 ```bash
 tokenpal watch [options]
   -d, --dir <path>     Watch a specific directory (default: ~/.codex/sessions)
   --db <path>          Path to SQLite database (default: ~/.tokenpal/tokenpal.sqlite)
   --config <path>      Path to custom config.json
-  --ui                 Launch desktop overlay mascot during alerts
+  --no-ui              Disable desktop overlay mascot during alerts (enabled by default)
 ```
 
-### 8. `tokenpal demo`
+### 9. `tokenpal demo`
 Opens the desktop mascot overlay once and automatically cycles through every guardian state (Healthy, Projected Exhaustion, Single High Request, Astra Badge, and Stale Reading) using fake data (~5 seconds each), then exits cleanly. Performs zero file reads.
 
 ```bash
 tokenpal demo
 ```
 
-### 9. `tokenpal replay <file>`
+### 10. `tokenpal replay <file>`
 Parses a past `.jsonl` session file from start to finish, evaluating rules at each turn and displaying a breakdown of context growth, cached tokens, and a Triggered Alerts Summary.
 
 ```bash
 tokenpal replay <session-file.jsonl>
 ```
 
-### 10. `tokenpal handoff`
+### 11. `tokenpal handoff`
 Extracts factual state from git (`git branch`, last commit, `git status`, `git diff --stat`) and recent session test/lint logs, formats a concise markdown handoff under 60 lines, saves to `.handoff/latest.md`, and copies it to your clipboard.
 
 ```bash

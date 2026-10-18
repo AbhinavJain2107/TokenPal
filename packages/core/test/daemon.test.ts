@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as child_process from 'node:child_process';
+import * as net from 'node:net';
 import { createRequire } from 'node:module';
 import {
   DaemonManager,
@@ -513,6 +514,103 @@ describe('Daemon Management', () => {
       expect(signalsSent[0]).toEqual({ pid: 7001, signal: 'SIGTERM' });
       expect(signalsSent).toContainEqual({ pid: 7001, signal: 'SIGKILL' });
     });
+
+    it('verifies and reports when no overlay processes remain on stop', async () => {
+      const fakeProcessTable = new Map<number, ProcessInfo>([
+        [
+          8001,
+          {
+            running: true,
+            command: 'node /repo/packages/cli/dist/index.js watch'
+          }
+        ]
+      ]);
+
+      const manager = new DaemonManager({
+        rootDir: tempDir,
+        pidFile,
+        logFile,
+        processChecker: (pid) => fakeProcessTable.get(pid) || { running: false },
+        processKiller: (pid) => fakeProcessTable.set(pid, { running: false }),
+        childProcessFinder: () => [],
+        overlayProcessFinder: () => []
+      });
+
+      writePidFileAtomic(pidFile, 8001);
+      const result = await manager.stop({ timeoutMs: 200, pollIntervalMs: 50 });
+
+      expect(result.stopped).toBe(true);
+      expect(result.remainingOverlayProcesses).toEqual([]);
+    });
+
+    it('finds, terminates, and reports remaining overlay processes on stop', async () => {
+      const signalsSent: Array<{ pid: number; signal: NodeJS.Signals }> = [];
+      const fakeProcessTable = new Map<number, ProcessInfo>([
+        [
+          8002,
+          {
+            running: true,
+            command: 'node /repo/packages/cli/dist/index.js watch'
+          }
+        ]
+      ]);
+
+      const manager = new DaemonManager({
+        rootDir: tempDir,
+        pidFile,
+        logFile,
+        processChecker: (pid) => fakeProcessTable.get(pid) || { running: false },
+        processKiller: (pid, signal) => {
+          signalsSent.push({ pid, signal });
+          fakeProcessTable.set(pid, { running: false });
+        },
+        childProcessFinder: () => [],
+        overlayProcessFinder: () => [
+          {
+            running: true,
+            pid: 9005,
+            command: 'electron /repo/packages/overlay/dist/main.js'
+          }
+        ]
+      });
+
+      writePidFileAtomic(pidFile, 8002);
+      const result = await manager.stop({ timeoutMs: 200, pollIntervalMs: 50 });
+
+      expect(result.stopped).toBe(true);
+      expect(result.remainingOverlayProcesses).toHaveLength(1);
+      expect(result.remainingOverlayProcesses?.[0].pid).toBe(9005);
+      expect(signalsSent).toContainEqual({ pid: 9005, signal: 'SIGKILL' });
+    });
+  });
+
+  describe('Daemon control socket communication', () => {
+    it('sends JSON command and receives response via control socket', async () => {
+      const socketPath = path.join(tempDir, 'test-control.sock');
+      let receivedCommand: any = null;
+
+      const server = net.createServer((socket) => {
+        socket.on('data', (data) => {
+          receivedCommand = JSON.parse(data.toString().trim());
+          socket.write(JSON.stringify({ status: 'ok', echoed: receivedCommand.command }) + '\n');
+        });
+      });
+
+      await new Promise<void>((resolve) => server.listen(socketPath, () => resolve()));
+
+      const manager = new DaemonManager({
+        rootDir: tempDir,
+        pidFile,
+        logFile,
+        socketPath
+      });
+
+      const response = await manager.sendControlCommand({ command: 'test-alert' });
+      expect(response).toEqual({ status: 'ok', echoed: 'test-alert' });
+      expect(receivedCommand).toEqual({ command: 'test-alert' });
+
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
   });
 
   describe('Log management & rotation', () => {
@@ -589,6 +687,35 @@ describe('Daemon Management', () => {
         const offRes = disableAutostart();
         expect(offRes.supported).toBe(false);
         expect(offRes.message).toBe('not supported yet');
+      }
+    });
+
+    it('manages autostart lifecycle safely with a throwaway label in isolated temp dir', () => {
+      if (process.platform !== 'darwin') return;
+
+      const throwawayLabel = `com.tokenpal.throwaway-${Date.now()}`;
+      const throwawayDir = path.join(tempDir, 'LaunchAgents');
+
+      try {
+        const onRes = enableAutostart({
+          label: throwawayLabel,
+          plistDir: throwawayDir,
+          logPath: path.join(tempDir, 'test.log')
+        });
+
+        expect(onRes.supported).toBe(true);
+        expect(onRes.plistPath).toContain(throwawayLabel);
+        expect(fs.existsSync(onRes.plistPath!)).toBe(true);
+
+        const offRes = disableAutostart({
+          label: throwawayLabel,
+          plistDir: throwawayDir
+        });
+
+        expect(offRes.supported).toBe(true);
+        expect(fs.existsSync(onRes.plistPath!)).toBe(false);
+      } finally {
+        disableAutostart({ label: throwawayLabel, plistDir: throwawayDir });
       }
     });
   });

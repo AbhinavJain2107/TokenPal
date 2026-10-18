@@ -37,7 +37,7 @@ export interface ToolEvent {
 
 export interface Alert {
   id: string;
-  session_id: string;
+  session_id: string | null;
   ts: string;
   rule: string;
   severity: 'green' | 'yellow' | 'red';

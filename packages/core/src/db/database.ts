@@ -14,7 +14,42 @@ export class TokenPalDatabase {
   }
 
   private init(): void {
+    this.migrateAlertsTable();
     this.db.exec(SCHEMA_SQL);
+  }
+
+  private migrateAlertsTable(): void {
+    try {
+      const tableInfo = this.db.pragma('table_info(alerts)') as Array<{ name: string; notnull: number }>;
+      if (tableInfo && tableInfo.length > 0) {
+        const sessionCol = tableInfo.find(c => c.name === 'session_id');
+        if (sessionCol && sessionCol.notnull === 1) {
+          this.db.pragma('foreign_keys = OFF');
+          this.db.exec(`
+            CREATE TABLE IF NOT EXISTS alerts_migration_backup (
+              id TEXT PRIMARY KEY,
+              session_id TEXT,
+              ts TEXT NOT NULL,
+              rule TEXT NOT NULL,
+              severity TEXT NOT NULL,
+              shown INTEGER NOT NULL DEFAULT 0,
+              action_taken TEXT,
+              FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+            );
+            INSERT INTO alerts_migration_backup (id, session_id, ts, rule, severity, shown, action_taken)
+            SELECT id, CASE WHEN session_id = 'meter' THEN NULL ELSE session_id END, ts, rule, severity, shown, action_taken FROM alerts;
+            DROP TABLE alerts;
+            ALTER TABLE alerts_migration_backup RENAME TO alerts;
+            CREATE INDEX IF NOT EXISTS idx_alerts_session_id ON alerts(session_id);
+          `);
+          this.db.pragma('foreign_keys = ON');
+        }
+      }
+      // Clean up any legacy fake 'meter' session row
+      this.db.prepare("DELETE FROM sessions WHERE id = 'meter' AND agent = 'meter'").run();
+    } catch {
+      // ignore
+    }
   }
 
   public close(): void {
@@ -83,27 +118,23 @@ export class TokenPalDatabase {
   }
 
   public insertAlert(alert: Alert): void {
-    if (!this.getSession(alert.session_id)) {
-      this.upsertSession({
-        id: alert.session_id,
-        agent: 'meter',
-        project_path: null,
-        started_at: alert.ts,
-        last_event_at: alert.ts,
-        model: null,
-        status: 'active'
-      });
-    }
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO alerts (id, session_id, ts, rule, severity, shown, action_taken)
       VALUES (@id, @session_id, @ts, @rule, @severity, @shown, @action_taken)
     `);
-    stmt.run(alert);
+    stmt.run({
+      ...alert,
+      session_id: alert.session_id ?? null
+    });
   }
 
-  public getAlerts(sessionId: string): Alert[] {
-    const stmt = this.db.prepare('SELECT * FROM alerts WHERE session_id = ? ORDER BY ts ASC');
-    return stmt.all(sessionId) as Alert[];
+  public getAlerts(sessionId?: string | null): Alert[] {
+    if (sessionId !== undefined && sessionId !== null) {
+      const stmt = this.db.prepare('SELECT * FROM alerts WHERE session_id = ? ORDER BY ts ASC');
+      return stmt.all(sessionId) as Alert[];
+    }
+    const stmt = this.db.prepare('SELECT * FROM alerts ORDER BY ts ASC');
+    return stmt.all() as Alert[];
   }
 
   public insertHandoff(handoff: Handoff): void {

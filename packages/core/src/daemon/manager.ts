@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import * as net from 'node:net';
 import * as child_process from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
@@ -9,7 +10,8 @@ import {
   DaemonStatus,
   DaemonStopResult,
   ProcessChecker,
-  ProcessKiller
+  ProcessKiller,
+  ProcessInfo
 } from './types.js';
 import {
   formatUptime,
@@ -21,7 +23,8 @@ import {
   readPidFileInfo,
   removePidFile,
   writePidFileAtomic,
-  DAEMON_FLAG_MARKER
+  DAEMON_FLAG_MARKER,
+  findOverlayProcesses
 } from './pid.js';
 
 export const DEFAULT_LOG_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -62,10 +65,12 @@ export class DaemonManager {
   private pidFile: string;
   private logFile: string;
   private rotatedLogFile: string;
+  private socketPath: string;
   private cliPath: string;
   private processChecker: ProcessChecker;
   private processKiller: ProcessKiller;
   private childProcessFinder: (pid: number) => number[];
+  private overlayProcessFinder: () => ProcessInfo[];
   private onStalePid?: (pid: number, reason: string) => void;
 
   constructor(options: DaemonManagerOptions = {}) {
@@ -73,10 +78,14 @@ export class DaemonManager {
     this.pidFile = options.pidFile || path.join(this.rootDir, 'tokenpal.pid');
     this.logFile = options.logFile || path.join(this.rootDir, 'tokenpal.log');
     this.rotatedLogFile = options.rotatedLogFile || path.join(this.rootDir, 'tokenpal.log.1');
+    this.socketPath = options.socketPath || (process.platform === 'win32'
+      ? '\\\\.\\pipe\\tokenpal-control.sock'
+      : path.join(this.rootDir, 'tokenpal.sock'));
     this.cliPath = options.cliPath || resolveDefaultCliPath();
     this.processChecker = options.processChecker || getDefaultProcessChecker();
     this.processKiller = options.processKiller || getDefaultProcessKiller();
     this.childProcessFinder = options.childProcessFinder || getChildProcessIds;
+    this.overlayProcessFinder = options.overlayProcessFinder || findOverlayProcesses;
     this.onStalePid = options.onStalePid;
 
     // Ensure root directory exists
@@ -99,6 +108,50 @@ export class DaemonManager {
 
   public getRotatedLogFilePath(): string {
     return this.rotatedLogFile;
+  }
+
+  public getSocketPath(): string {
+    return this.socketPath;
+  }
+
+  public checkRemainingOverlayProcesses(): ProcessInfo[] {
+    return this.overlayProcessFinder();
+  }
+
+  /**
+   * Sends a JSON control command to the running daemon via the local control socket.
+   */
+  public async sendControlCommand(command: any, timeoutMs = 2500): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const client = net.createConnection(this.socketPath);
+      let buffer = '';
+      const timer = setTimeout(() => {
+        client.destroy();
+        reject(new Error(`Timeout waiting for daemon response on socket ${this.socketPath}`));
+      }, timeoutMs);
+
+      client.on('connect', () => {
+        client.write(JSON.stringify(command) + '\n');
+      });
+
+      client.on('data', (chunk) => {
+        buffer += chunk.toString();
+        if (buffer.includes('\n')) {
+          clearTimeout(timer);
+          client.end();
+          try {
+            resolve(JSON.parse(buffer.trim()));
+          } catch {
+            resolve({ raw: buffer.trim() });
+          }
+        }
+      });
+
+      client.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
   }
 
 
@@ -191,7 +244,11 @@ export class DaemonManager {
     }
 
     const args = [this.cliPath, 'watch', DAEMON_FLAG_MARKER];
-    if (options.ui !== false) args.push('--ui');
+    if (options.ui === false) {
+      args.push('--no-ui');
+    } else {
+      args.push('--ui');
+    }
     if (options.watchDir) args.push('--dir', options.watchDir);
     if (options.dbPath) args.push('--db', options.dbPath);
     if (options.configPath) args.push('--config', options.configPath);
@@ -250,7 +307,13 @@ export class DaemonManager {
   public async stop(options: { timeoutMs?: number; pollIntervalMs?: number } = {}): Promise<DaemonStopResult> {
     const status = this.getStatus();
     if (!status.running || !status.pid) {
-      return { stopped: false, wasRunning: false };
+      const leftoverOverlay = this.overlayProcessFinder();
+      for (const op of leftoverOverlay) {
+        if (op.pid && op.pid > 0) {
+          this.processKiller(op.pid, 'SIGKILL');
+        }
+      }
+      return { stopped: false, wasRunning: false, remainingOverlayProcesses: leftoverOverlay };
     }
 
     const targetPid = status.pid;
@@ -315,8 +378,16 @@ export class DaemonManager {
       await new Promise((resolve) => setTimeout(resolve, 300));
     }
 
+    // 4. Verify no remaining processes whose command line includes the overlay entry point
+    const remainingOverlay = this.overlayProcessFinder();
+    for (const op of remainingOverlay) {
+      if (op.pid && op.pid > 0) {
+        this.processKiller(op.pid, 'SIGKILL');
+      }
+    }
+
     removePidFile(this.pidFile);
-    return { stopped: true, wasRunning: true, pid: targetPid, forced };
+    return { stopped: true, wasRunning: true, pid: targetPid, forced, remainingOverlayProcesses: remainingOverlay };
   }
 
   /**

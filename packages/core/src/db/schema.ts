@@ -41,7 +41,7 @@ CREATE INDEX IF NOT EXISTS idx_tool_events_session_id ON tool_events(session_id)
 
 CREATE TABLE IF NOT EXISTS alerts (
   id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL,
+  session_id TEXT,
   ts TEXT NOT NULL,
   rule TEXT NOT NULL,
   severity TEXT NOT NULL,

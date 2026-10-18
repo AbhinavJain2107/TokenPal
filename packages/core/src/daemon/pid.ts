@@ -237,3 +237,46 @@ export function getChildProcessIds(parentPid: number): number[] {
     return [];
   }
 }
+
+/**
+ * Finds any running processes whose command line includes the overlay entry point.
+ */
+export function findOverlayProcesses(): ProcessInfo[] {
+  if (process.platform === 'win32') {
+    return [];
+  }
+  try {
+    const output = child_process.execSync('ps -eo pid,args', {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 3000
+    });
+    const lines = output.split('\n');
+    const matched: ProcessInfo[] = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const match = trimmed.match(/^(\d+)\s+(.+)$/);
+      if (match) {
+        const pid = parseInt(match[1], 10);
+        const command = match[2];
+        if (pid === process.pid) continue;
+        if (
+          command.includes('packages/overlay/dist/main.js') ||
+          command.includes('overlay/dist/main.js') ||
+          command.includes('packages/overlay/src/main.ts')
+        ) {
+          matched.push({
+            running: true,
+            command,
+            pid
+          });
+        }
+      }
+    }
+    return matched;
+  } catch {
+    return [];
+  }
+}
+
