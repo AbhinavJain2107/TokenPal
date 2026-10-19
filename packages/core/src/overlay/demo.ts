@@ -5,17 +5,14 @@ export interface DemoStep {
   name: string;
   description: string;
   payload: OverlayAlertPayload;
+  openCustomize?: boolean;
 }
 
 /**
- * Returns the 5 demonstration states cycling through all guardian conditions:
- * 1. Healthy (green, no alerts, sustainable pace)
- * 2. Projected Exhaustion (yellow, projection warns exhaustion before reset)
- * 3. Single High Request (yellow, single turn jumped by +4%)
- * 4. Astra Badge (active Astra model with 2 to 3x multiplier badge)
- * 5. Stale Reading (yellow, reading older than 30m or reset passed)
+ * Returns the 5 demonstration states cycling through all guardian conditions
+ * and all 5 skin animations (idle, walk, sleep, alert, happy).
  *
- * Uses fake data exclusively with zero file reads.
+ * Preserves the exact 5 canonical meter states for tests and legacy callers.
  */
 export function getDemoStates(): DemoStep[] {
   const now = Date.now();
@@ -27,14 +24,15 @@ export function getDemoStates(): DemoStep[] {
   return [
     {
       name: 'healthy',
-      description: 'Healthy quota (18% used, calm breathing, no alerts)',
+      description: 'DEMO: Healthy quota (18% used) with [Idle] animation',
       payload: {
         state: 'green',
-        reason: 'Quota is healthy · No alerts',
-        advice: 'Pace is sustainable for normal development.',
+        reason: 'DEMO: Quota is healthy (18% used) · Mascot in [IDLE] state',
+        advice: 'Pace is sustainable for normal development. Click mascot to inspect.',
         contextTokens: 14250,
         turnIndex: 6,
         model: 'gpt-5-sol',
+        animationOverride: 'idle',
         meter: {
           usedPercent: 18,
           percentBar: '[██░░░░░░░░░░] 18%',
@@ -49,15 +47,16 @@ export function getDemoStates(): DemoStep[] {
     },
     {
       name: 'projected_exhaustion',
-      description: 'Projected exhaustion warning (quota will run out before next reset)',
+      description: 'DEMO ALERT: Projected quota exhaustion with [Alert] animation and auto-opened panel',
       payload: {
         state: 'yellow',
         rule: 'projected_exhaustion',
-        reason: 'Projected quota exhaustion in ~18h (before next reset in 4d 8h; note: meter covers all concurrent sessions)',
+        reason: 'DEMO ALERT: Projected quota exhaustion in ~18h · Mascot in [ALERT] state',
         advice: 'Pace remaining tasks or conclude long threads. Note: meter reflects usage across all active sessions.',
         contextTokens: 48900,
         turnIndex: 19,
         model: 'gpt-5-sol',
+        animationOverride: 'alert',
         meter: {
           usedPercent: 72,
           percentBar: '[█████████░░░] 72%',
@@ -73,15 +72,16 @@ export function getDemoStates(): DemoStep[] {
     },
     {
       name: 'single_request_high',
-      description: 'Single high request warning (turn jumped meter by +4%)',
+      description: 'DEMO ALERT: Single high request (+4%) with [Alert / Walk] animation',
       payload: {
         state: 'yellow',
         rule: 'single_request_high',
-        reason: 'Single request measured about +4% meter change (note: meter covers all sessions; jump may not come from this request alone)',
+        reason: 'DEMO ALERT: Single request measured about +4% meter change · Mascot in [ALERT] state',
         advice: 'Break large prompts into smaller tasks. Note: the meter is shared across all sessions.',
         contextTokens: 112000,
         turnIndex: 24,
         model: 'gpt-5-sol',
+        animationOverride: 'alert',
         meter: {
           usedPercent: 76,
           percentBar: '[█████████░░░] 76%',
@@ -96,15 +96,17 @@ export function getDemoStates(): DemoStep[] {
     },
     {
       name: 'astra_badge',
-      description: 'Astra model badge notice (roughly 2 to 3x multiplier)',
+      description: 'DEMO: Astra model badge notice with [Happy] animation and speech bubble',
       payload: {
         state: 'green',
         rule: 'astra_active',
-        reason: 'Active model: Astra (uses roughly 2 to 3x Sol\'s allowance)',
-        advice: 'Be mindful of larger allowance burn rate on Astra.',
+        notice: 'Astra model badge active',
+        reason: 'DEMO NOTICE: Switched to Astra · Mascot in [HAPPY] animation',
+        advice: 'Be mindful of larger allowance burn rate on Astra model.',
         contextTokens: 62400,
         turnIndex: 28,
         model: 'gpt-6-astra-preview',
+        animationOverride: 'happy',
         meter: {
           usedPercent: 78,
           percentBar: '[█████████░░░] 78%',
@@ -119,15 +121,16 @@ export function getDemoStates(): DemoStep[] {
     },
     {
       name: 'stale_reading',
-      description: 'Stale meter warning (last reading older than 30m)',
+      description: 'DEMO: Stale meter warning with [Sleep] animation (no popup)',
       payload: {
         state: 'yellow',
         rule: 'stale_reading',
-        reason: 'Meter reading is stale (last updated 45m ago; >30m threshold)',
+        reason: 'DEMO STALE: Meter reading is older than 30 minutes · Mascot in [SLEEP] animation',
         advice: 'Run an agent turn or check network connectivity to refresh meter.',
         contextTokens: 62400,
         turnIndex: 28,
         model: 'gpt-6-astra-preview',
+        animationOverride: 'sleep',
         meter: {
           usedPercent: 78,
           percentBar: '[█████████░░░] 78%',
@@ -140,5 +143,72 @@ export function getDemoStates(): DemoStep[] {
         }
       }
     }
+  ];
+}
+
+/**
+ * Returns complete sequence showcasing all 6 animations (idle, walk, speech notice/happy,
+ * curious look-up, alert with badge and auto-open, sleep with no popup) for `tokenpal demo`.
+ */
+export function getAllDemoStates(): DemoStep[] {
+  const base = getDemoStates();
+  const now = Date.now();
+  const resetEpoch = Math.floor(now / 1000) + (4 * 86400 + 8 * 3600);
+  const resetLocal = formatLocalTime(resetEpoch);
+  const nowLocal = formatLocalTime(now);
+
+  const roamingStep: DemoStep = {
+    name: 'roaming',
+    description: 'DEMO: Walking across desktop edge · Mascot in [WALK] state',
+    payload: {
+      state: 'green',
+      reason: 'DEMO: Roaming gently along desktop edge · Mascot in [WALK] state',
+      advice: 'Roaming can be toggled in Customize.',
+      animationOverride: 'walk',
+      meter: {
+        usedPercent: 20,
+        percentBar: '[██░░░░░░░░░░] 20%',
+        timeToResetFormatted: '5d 11h',
+        resetsAtLocal: resetLocal,
+        asOfLocal: nowLocal,
+        isStale: false,
+        planType: 'prolite'
+      }
+    }
+  };
+
+  const curiousStep: DemoStep = {
+    name: 'expensive_request',
+    description: 'DEMO: Noticeable request (+3.2%) · Mascot in [CURIOUS / LOOK-UP] state',
+    payload: {
+      state: 'green',
+      reason: 'DEMO: New request cost +3.2% · Mascot looks up curiously',
+      advice: 'Mascot reacts to significant requests without opening alert panel.',
+      contextTokens: 62400,
+      turnIndex: 16,
+      model: 'gpt-5-sol',
+      animationOverride: 'curious',
+      meter: {
+        usedPercent: 31,
+        percentBar: '[████░░░░░░░░] 31%',
+        timeToResetFormatted: '5d 6h',
+        resetsAtLocal: resetLocal,
+        asOfLocal: nowLocal,
+        isStale: false,
+        planType: 'prolite',
+        requestCostDisplay: '+3.2% (2 calls, 31,400 tokens)'
+      }
+    }
+  };
+
+  // Order: Healthy(idle) -> Roaming(walk) -> Notice(happy + speech) -> Curious(look-up) -> Alerts -> Sleep
+  return [
+    base[0], // healthy (idle)
+    roamingStep, // walk
+    base[3], // astra_badge / notice (happy)
+    curiousStep, // curious
+    base[1], // projected_exhaustion (alert)
+    base[2], // single_request_high (alert)
+    base[4]  // stale_reading (sleep)
   ];
 }

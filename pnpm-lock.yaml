@@ -50,6 +50,10 @@ importers:
         version: 7.6.13
 
   packages/overlay:
+    dependencies:
+      '@tokenpal/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       electron:
         specifier: ^33.2.1

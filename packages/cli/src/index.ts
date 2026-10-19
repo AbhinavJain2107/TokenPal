@@ -17,6 +17,7 @@ import {
   OverlayAlertPayload,
   readLatestMeterStatus,
   getDemoStates,
+  getAllDemoStates,
   DaemonManager,
   enableAutostart,
   disableAutostart,
@@ -63,6 +64,9 @@ async function runWatcherForeground(options: {
   const watcher = new SessionWatcher({ db, customDirs, pollIntervalMs: 1000 });
   const alertManager = new MeterAlertManager();
   const launcher = options.ui !== false ? new OverlayLauncher() : null;
+  if (launcher) {
+    launcher.start();
+  }
 
   // Local control server for daemon IPC commands (e.g. tokenpal test-alert)
   const socketPath = daemonManager.getSocketPath();
@@ -134,6 +138,25 @@ async function runWatcherForeground(options: {
   if (initialSnapshot) {
     const initialStatus = watcher.getMeterReader().getMeterStatus();
     if (initialStatus) {
+      if (launcher) {
+        launcher.updateMeter({
+          state: initialStatus.isStale ? 'yellow' : 'green',
+          meter: {
+            usedPercent: initialStatus.usedPercent,
+            timeToResetFormatted: initialStatus.timeToResetFormatted,
+            resetsAtLocal: initialStatus.resetsAtLocal,
+            asOfLocal: initialStatus.asOfLocal,
+            isStale: initialStatus.isStale,
+            staleReason: initialStatus.staleReason,
+            planType: initialStatus.planType,
+            percentBar: initialStatus.percentBar,
+            earlyResetsCount: initialStatus.earlyResetsCount,
+            earlyResetsNote: initialStatus.earlyResetsNote,
+            projectedExhaustionText: initialStatus.projectedExhaustionText,
+            modelBadgeText: initialStatus.modelBadgeText
+          }
+        });
+      }
       const resetPart = initialStatus.resetsAtLocal ? ` (${initialStatus.resetsAtLocal})` : '';
       const asOfPart = initialStatus.asOfLocal ? ` | as of ${initialStatus.asOfLocal}` : '';
       console.log(`\n[METER] ${initialStatus.percentBar} | Resets in ${initialStatus.timeToResetFormatted}${resetPart}${asOfPart} | Plan: ${initialStatus.planType}`);
@@ -194,12 +217,37 @@ async function runWatcherForeground(options: {
       if (launcher) {
         launcher.showAlert(alert);
       }
+    } else if (launcher) {
+      launcher.updateMeter({
+        state: status.isStale ? 'yellow' : 'green',
+        meter: {
+          usedPercent: status.usedPercent,
+          timeToResetFormatted: status.timeToResetFormatted,
+          resetsAtLocal: status.resetsAtLocal,
+          asOfLocal: status.asOfLocal,
+          isStale: status.isStale,
+          staleReason: status.staleReason,
+          planType: status.planType,
+          percentBar: status.percentBar,
+          earlyResetsCount: status.earlyResetsCount,
+          earlyResetsNote: status.earlyResetsNote,
+          projectedExhaustionText: status.projectedExhaustionText,
+          modelBadgeText: status.modelBadgeText
+        }
+      });
     }
   });
 
   // Model switch notification
   watcher.on('model_switch', ({ notice }) => {
     console.log(`\n[NOTICE] ${notice}\n`);
+    if (launcher) {
+      launcher.updateMeter({
+        state: 'green',
+        notice,
+        animationOverride: 'happy'
+      });
+    }
   });
 
   // Quota reset detected
@@ -242,6 +290,19 @@ async function runWatcherForeground(options: {
 
         if (launcher) {
           launcher.showAlert(alert);
+        }
+      } else if (cost.costPercent && cost.costPercent >= 1.5) {
+        if (launcher) {
+          launcher.updateMeter({
+            state: 'green',
+            animationOverride: 'curious',
+            meter: {
+              usedPercent: currentStatus?.usedPercent ?? 0,
+              timeToResetFormatted: currentStatus?.timeToResetFormatted ?? '',
+              planType: currentStatus?.planType ?? 'prolite',
+              requestCostDisplay: cost.costDisplay
+            }
+          });
         }
       }
     }
@@ -633,14 +694,15 @@ program
 
 program
   .command('demo')
-  .description('Open desktop overlay once and cycle through all 5 guardian states with fake data (~5s each) then exit')
+  .description('Open desktop overlay once and cycle through mascot animations and customize window with fake data (~5s each) then exit')
   .action(async () => {
-    const states = getDemoStates();
+    const states = getAllDemoStates();
     const launcher = new OverlayLauncher();
 
     console.log('='.repeat(70));
     console.log(' TokenPal Overlay Demo Mode');
-    console.log(' Cycling through 5 guardian states (~5s each) using fake data.');
+    console.log(' Cycling through 6 animations (idle, walk, speech notice, curious look-up,');
+    console.log(' alert with auto-opened panel, sleep) and customize window (~5s each).');
     console.log(' Zero file reads. Press Ctrl+C at any time to exit.');
     console.log('='.repeat(70) + '\n');
 
@@ -650,12 +712,23 @@ program
       process.exit(0);
     });
 
+    const totalSteps = states.length + 1;
     for (let i = 0; i < states.length; i++) {
       const step = states[i];
-      console.log(`[${i + 1}/${states.length}] ${step.name.toUpperCase()}: ${step.description}`);
+      console.log(`[${i + 1}/${totalSteps}] ${step.name.toUpperCase()}: ${step.description}`);
       launcher.showAlert(step.payload);
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
+
+    console.log(`[${totalSteps}/${totalSteps}] CUSTOMIZE_WINDOW: DEMO: Customize Window (Skin picker, tint, accessories, size, roam)`);
+    launcher.showAlert({
+      state: 'green',
+      reason: 'DEMO: Customize Window opened (Skins, color tints, accessories, size, opacity)',
+      advice: 'Try customizing your mascot in real-time.',
+      animationOverride: 'happy',
+      openCustomize: true
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5000));
 
     console.log('\nDemo complete. Closing overlay...');
     launcher.close();

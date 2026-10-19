@@ -5,10 +5,13 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc && cp src/mascot.html dist/mascot.html",
+    "build": "tsc && cp src/*.html dist/ && cp -r skins dist/",
     "type-check": "tsc --noEmit"
   },
 
+  "dependencies": {
+    "@tokenpal/core": "workspace:*"
+  },
   "devDependencies": {
     "electron": "^33.2.1"
   }

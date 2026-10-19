@@ -27,4 +27,6 @@ export interface OverlayAlertPayload {
   model?: string;
   meter?: MeterDisplayData;
   notice?: string;
+  animationOverride?: 'idle' | 'walk' | 'sleep' | 'alert' | 'happy' | 'curious';
+  openCustomize?: boolean;
 }

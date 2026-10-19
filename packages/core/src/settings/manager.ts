@@ -4,6 +4,59 @@ import * as os from 'node:os';
 import { RuleThresholds } from '../rules/types.js';
 import { DEFAULT_THRESHOLDS } from '../rules/config.js';
 
+export interface OverlayAccessoriesConfig {
+  hat: boolean;
+  glasses: boolean;
+  bow: boolean;
+}
+
+export type OverlayVisibilityMode = 'always' | 'coding_apps' | 'alerts_only';
+
+export interface OverlaySettingsConfig {
+  skin: string;
+  colorTint: string;
+  accessories: OverlayAccessoriesConfig;
+  size: number;
+  opacity: number;
+  name: string;
+  roam: boolean;
+  visibilityMode: OverlayVisibilityMode | string;
+  codingApps: string[];
+  showAlertsAnywhere: boolean;
+  positionsByDisplay: Record<string, { x: number; y: number }>;
+  panelOffset?: { x: number; y: number } | null;
+  isPinned?: boolean;
+}
+
+export const DEFAULT_OVERLAY_SETTINGS: OverlaySettingsConfig = {
+  skin: 'cat',
+  colorTint: 'none',
+  accessories: {
+    hat: false,
+    glasses: false,
+    bow: false
+  },
+  size: 1.0,
+  opacity: 1.0,
+  name: 'Pal',
+  roam: false,
+  visibilityMode: 'coding_apps',
+  codingApps: [
+    'Visual Studio Code',
+    'Code',
+    'Antigravity',
+    'Antigravity IDE',
+    'Cursor',
+    'Terminal',
+    'iTerm2',
+    'iTerm'
+  ],
+  showAlertsAnywhere: false,
+  positionsByDisplay: {},
+  panelOffset: null,
+  isPinned: false
+};
+
 export interface TokenPalConfig {
   thresholds: RuleThresholds;
   snoozeMinutes: number;
@@ -16,6 +69,7 @@ export interface TokenPalConfig {
     model: string;
     endpoint: string;
   };
+  overlay: OverlaySettingsConfig;
 }
 
 export const DEFAULT_CONFIG: TokenPalConfig = {
@@ -29,7 +83,8 @@ export const DEFAULT_CONFIG: TokenPalConfig = {
     provider: 'none',
     model: 'llama3.2',
     endpoint: 'http://127.0.0.1:11434'
-  }
+  },
+  overlay: DEFAULT_OVERLAY_SETTINGS
 };
 
 export class SettingsManager {
@@ -60,6 +115,20 @@ export class SettingsManager {
           summarizer: {
             ...DEFAULT_CONFIG.summarizer,
             ...(parsed.summarizer || {})
+          },
+          overlay: {
+            ...DEFAULT_CONFIG.overlay,
+            ...(parsed.overlay || {}),
+            accessories: {
+              ...DEFAULT_CONFIG.overlay.accessories,
+              ...((parsed.overlay && parsed.overlay.accessories) || {})
+            },
+            codingApps: Array.isArray(parsed.overlay?.codingApps)
+              ? parsed.overlay.codingApps
+              : DEFAULT_CONFIG.overlay.codingApps,
+            positionsByDisplay: {
+              ...(parsed.overlay?.positionsByDisplay || {})
+            }
           }
         };
       } catch {
@@ -80,6 +149,21 @@ export class SettingsManager {
       summarizer: {
         ...this.currentConfig.summarizer,
         ...(updates.summarizer || {})
+      },
+      overlay: {
+        ...this.currentConfig.overlay,
+        ...(updates.overlay || {}),
+        accessories: {
+          ...this.currentConfig.overlay.accessories,
+          ...((updates.overlay && updates.overlay.accessories) || {})
+        },
+        codingApps: Array.isArray(updates.overlay?.codingApps)
+          ? updates.overlay.codingApps
+          : this.currentConfig.overlay.codingApps,
+        positionsByDisplay: {
+          ...this.currentConfig.overlay.positionsByDisplay,
+          ...(updates.overlay?.positionsByDisplay || {})
+        }
       }
     };
 
@@ -98,5 +182,13 @@ export class SettingsManager {
 
   public set<K extends keyof TokenPalConfig>(key: K, value: TokenPalConfig[K]): void {
     this.save({ [key]: value } as any);
+  }
+
+  public update<K extends keyof TokenPalConfig>(key: K, updates: Partial<TokenPalConfig[K]>): TokenPalConfig {
+    const current = this.get(key);
+    if (typeof current === 'object' && current !== null) {
+      return this.save({ [key]: { ...current, ...updates } } as any);
+    }
+    return this.save({ [key]: updates } as any);
   }
 }

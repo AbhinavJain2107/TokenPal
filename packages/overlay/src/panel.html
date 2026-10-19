@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TokenPal Status Panel</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      user-select: none;
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+      padding: 8px;
+    }
+
+    /* Redesigned Opaque Solid Card */
+    .panel-card {
+      background: #0f172a; /* Solid slate dark - completely opaque */
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 14px;
+      color: #f8fafc;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.7);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 14px 16px;
+      height: calc(100% - 16px);
+      max-height: 380px;
+      overflow: hidden;
+    }
+
+    /* Header Drag Handle */
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      cursor: grab;
+    }
+    .panel-header:active {
+      cursor: grabbing;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .status-dot {
+      font-size: 13px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+    .dot-green { color: #10b981; text-shadow: 0 0 6px rgba(16, 185, 129, 0.6); }
+    .dot-yellow { color: #f59e0b; text-shadow: 0 0 6px rgba(245, 158, 11, 0.6); }
+    .dot-red { color: #ef4444; text-shadow: 0 0 8px rgba(239, 68, 68, 0.7); }
+
+    .panel-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #f1f5f9;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      letter-spacing: 0.2px;
+    }
+
+    .demo-tag {
+      display: none;
+      background: #f59e0b;
+      color: #0f172a;
+      font-size: 9px;
+      font-weight: 800;
+      padding: 1px 5px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .icon-btn {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      width: 22px;
+      height: 22px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      transition: all 0.15s ease;
+      outline: none;
+    }
+    .icon-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: #f8fafc;
+    }
+    .icon-btn.active {
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.15);
+    }
+
+    /* Percent & Progress Bar Row */
+    .metric-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .percent-large {
+      font-size: 28px;
+      font-weight: 800;
+      color: #f8fafc;
+      line-height: 1;
+      letter-spacing: -0.5px;
+    }
+    .plan-badge {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #94a3b8;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    /* Thin Progress Bar */
+    .bar-container {
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      overflow: hidden;
+      width: 100%;
+    }
+    .bar-fill {
+      height: 100%;
+      width: 0%;
+      background: #3b82f6;
+      border-radius: 2px;
+      transition: width 0.3s ease, background 0.3s ease;
+    }
+
+    /* Reset Line with Tooltip */
+    .reset-line {
+      font-size: 11px;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: help;
+    }
+
+    /* Plain Language Message */
+    .message-line {
+      font-size: 12px;
+      line-height: 1.4;
+      color: #e2e8f0;
+      font-weight: 500;
+      min-height: 18px;
+    }
+
+    /* Button Actions */
+    .actions-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-top: 2px;
+    }
+
+    button.btn {
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      outline: none;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.08);
+      color: #f8fafc;
+    }
+    button.btn:hover {
+      background: rgba(255, 255, 255, 0.18);
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+    button.btn-primary {
+      background: #2563eb;
+      border-color: #3b82f6;
+      color: #fff;
+    }
+    button.btn-primary:hover {
+      background: #1d4ed8;
+      border-color: #60a5fa;
+    }
+
+    /* Collapsible Details Panel */
+    .details-panel {
+      display: none;
+      flex-direction: column;
+      gap: 5px;
+      font-size: 11px;
+      color: #94a3b8;
+      background: rgba(15, 23, 42, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 8px 10px;
+      overflow-y: auto;
+      max-height: 130px;
+    }
+    .detail-row {
+      line-height: 1.35;
+    }
+
+    /* Footer Row */
+    .panel-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: auto;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 10px;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="panel-card" id="panelCard">
+    <!-- Header row: status dot, plain language title, pin toggle, close button -->
+    <div class="panel-header" id="panelHeader">
+      <div class="header-left">
+        <span class="status-dot dot-green" id="statusDot">●</span>
+        <span class="panel-title" id="panelTitle">All good</span>
+        <span class="demo-tag" id="demoTag">DEMO</span>
+      </div>
+      <div class="header-controls">
+        <button class="icon-btn" id="btnPin" title="Pin panel open">📌</button>
+        <button class="icon-btn" id="btnClose" title="Close (Esc)">✕</button>
+      </div>
+    </div>
+
+    <!-- Large Percent & Plan Badge -->
+    <div class="metric-row">
+      <div class="percent-large" id="percentLarge">0%</div>
+      <div class="plan-badge" id="planBadge">PLAN</div>
+    </div>
+
+    <!-- Thin Progress Bar -->
+    <div class="bar-container">
+      <div class="bar-fill" id="barFill"></div>
+    </div>
+
+    <!-- Single Reset Line with Local Date Tooltip -->
+    <div class="reset-line" id="resetLine" title="Scheduled reset time">Resets in -</div>
+
+    <!-- Plain-Language Message Line (Never internal rule name) -->
+    <div class="message-line" id="messageLine">Quota is healthy · Sustainable pace</div>
+
+    <!-- Buttons Row: Primary Snooze, Secondary Dismiss, Details, Customize -->
+    <div class="actions-row">
+      <button class="btn btn-primary" id="btnSnooze">Snooze 30m</button>
+      <button class="btn" id="btnDismiss">Dismiss</button>
+      <button class="btn" id="btnDetails">Details ▾</button>
+      <button class="btn" id="btnCustomize" title="Customize mascot">🎨</button>
+    </div>
+
+    <!-- Collapsible Details Section -->
+    <div class="details-panel" id="detailsPanel">
+      <div class="detail-row" id="detRequestCost" style="display: none; color: #a7f3d0;"></div>
+      <div class="detail-row" id="detModelBadge" style="display: none; color: #93c5fd;"></div>
+      <div class="detail-row" id="detProjection" style="display: none; color: #fde68a;"></div>
+      <div class="detail-row" id="detEarlyResets" style="display: none; color: #f59e0b;"></div>
+      <div class="detail-row" id="detStaleReason" style="display: none; color: #f59e0b;"></div>
+      <div class="detail-row" id="detAdvice" style="display: none; color: #e2e8f0; font-weight: 500;"></div>
+      <div class="detail-row" style="color: #64748b; font-size: 10px;">ℹ️ Meter reflects usage across all active sessions</div>
+      <div class="detail-row">Context: <span id="detContext">0</span> tokens | Turn: <span id="detTurn">0</span></div>
+      <div style="margin-top: 6px;">
+        <button class="btn btn-primary" id="btnHandoff" style="width: 100%;">Copy Handoff</button>
+      </div>
+    </div>
+
+    <!-- Footer: small as-of time text -->
+    <div class="panel-footer">
+      <span id="asOfFooter">updated -</span>
+      <span style="opacity: 0.6;">TokenPal</span>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    const panelHeader = document.getElementById('panelHeader');
+    const statusDot = document.getElementById('statusDot');
+    const panelTitle = document.getElementById('panelTitle');
+    const demoTag = document.getElementById('demoTag');
+    const btnPin = document.getElementById('btnPin');
+    const btnClose = document.getElementById('btnClose');
+    const percentLarge = document.getElementById('percentLarge');
+    const planBadge = document.getElementById('planBadge');
+    const barFill = document.getElementById('barFill');
+    const resetLine = document.getElementById('resetLine');
+    const messageLine = document.getElementById('messageLine');
+    const btnSnooze = document.getElementById('btnSnooze');
+    const btnDismiss = document.getElementById('btnDismiss');
+    const btnDetails = document.getElementById('btnDetails');
+    const btnCustomize = document.getElementById('btnCustomize');
+    const btnHandoff = document.getElementById('btnHandoff');
+    const detailsPanel = document.getElementById('detailsPanel');
+    const asOfFooter = document.getElementById('asOfFooter');
+
+    // Details elements
+    const detRequestCost = document.getElementById('detRequestCost');
+    const detModelBadge = document.getElementById('detModelBadge');
+    const detProjection = document.getElementById('detProjection');
+    const detEarlyResets = document.getElementById('detEarlyResets');
+    const detStaleReason = document.getElementById('detStaleReason');
+    const detAdvice = document.getElementById('detAdvice');
+    const detContext = document.getElementById('detContext');
+    const detTurn = document.getElementById('detTurn');
+
+    let isPinned = false;
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+
+    // Draggable header via renderer mouse events + IPC (no -webkit-app-region)
+    panelHeader.addEventListener('mousedown', (e) => {
+      // Don't drag if clicking buttons inside header
+      if (e.target.closest('.header-controls')) return;
+      if (e.button !== 0) return;
+      isDragging = true;
+      dragStartX = e.screenX;
+      dragStartY = e.screenY;
+      ipcRenderer.send('panel:drag-start');
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const deltaX = e.screenX - dragStartX;
+      const deltaY = e.screenY - dragStartY;
+      if (Math.abs(deltaX) > 0 || Math.abs(deltaY) > 0) {
+        ipcRenderer.send('panel:drag-move', { deltaX, deltaY });
+        dragStartX = e.screenX;
+        dragStartY = e.screenY;
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        ipcRenderer.send('panel:drag-end');
+      }
+    });
+
+    // Close button & Escape Key
+    btnClose.addEventListener('click', () => {
+      ipcRenderer.send('panel:close');
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        ipcRenderer.send('panel:close');
+      }
+    });
+
+    // Pin toggle
+    btnPin.addEventListener('click', () => {
+      isPinned = !isPinned;
+      btnPin.classList.toggle('active', isPinned);
+      btnPin.title = isPinned ? 'Unpin panel' : 'Pin panel open';
+      ipcRenderer.send('panel:set-pinned', isPinned);
+    });
+
+    // Buttons actions
+    btnSnooze.addEventListener('click', () => {
+      ipcRenderer.send('action:snooze', 30);
+    });
+
+    btnDismiss.addEventListener('click', () => {
+      ipcRenderer.send('action:dismiss');
+    });
+
+    btnCustomize.addEventListener('click', () => {
+      ipcRenderer.send('overlay:open-customize');
+    });
+
+    btnHandoff.addEventListener('click', () => {
+      ipcRenderer.send('action:copy-handoff');
+    });
+
+    btnDetails.addEventListener('click', () => {
+      const isVisible = detailsPanel.style.display === 'flex';
+      detailsPanel.style.display = isVisible ? 'none' : 'flex';
+      btnDetails.textContent = isVisible ? 'Details ▾' : 'Details ▴';
+    });
+
+    // Helpers to derive plain language titles (NEVER internal rule names)
+    function derivePlainLanguageTitle(payload) {
+      if (payload.rule === 'projected_exhaustion') {
+        return 'On pace to run out early';
+      }
+      if (payload.rule === 'single_request_high') {
+        return 'High usage on last turn';
+      }
+      if (payload.meter?.isStale) {
+        return 'Reading is old';
+      }
+      if (payload.state === 'red') {
+        return 'Allowance critical';
+      }
+      if (payload.state === 'yellow') {
+        return 'Allowance notice';
+      }
+      return 'All good';
+    }
+
+    function updatePanel(payload) {
+      if (!payload) return;
+
+      const state = payload.state || 'green';
+      const isDemo = Boolean(payload.isDemo || (payload.reason && payload.reason.includes('DEMO')));
+
+      // Demo tag
+      demoTag.style.display = isDemo ? 'inline-block' : 'none';
+
+      // Status Dot
+      statusDot.className = `status-dot dot-${state}`;
+
+      // Plain language title
+      panelTitle.textContent = derivePlainLanguageTitle(payload);
+
+      // Meter percent & Plan
+      if (payload.meter) {
+        const used = Math.round(payload.meter.usedPercent || 0);
+        percentLarge.textContent = `${used}%`;
+        barFill.style.width = `${Math.min(100, Math.max(0, used))}%`;
+        if (used >= 85) barFill.style.background = '#ef4444';
+        else if (used >= 65) barFill.style.background = '#f59e0b';
+        else barFill.style.background = '#3b82f6';
+
+        planBadge.textContent = (payload.meter.planType || 'ACTIVE').toUpperCase();
+
+        // Reset Line with full date tooltip
+        const resetFormatted = payload.meter.timeToResetFormatted || '-';
+        resetLine.textContent = `Resets in ${resetFormatted}`;
+        if (payload.meter.resetsAtLocal) {
+          resetLine.title = `Full reset date: ${payload.meter.resetsAtLocal}`;
+        }
+
+        // As of Footer
+        if (payload.meter.asOfLocal) {
+          asOfFooter.textContent = `updated ${payload.meter.asOfLocal}`;
+        }
+
+        // Details items
+        if (payload.meter.requestCostDisplay) {
+          detRequestCost.textContent = `📊 Last request: ${payload.meter.requestCostDisplay}`;
+          detRequestCost.style.display = 'block';
+        } else {
+          detRequestCost.style.display = 'none';
+        }
+
+        if (payload.meter.modelBadgeText) {
+          detModelBadge.textContent = `💡 ${payload.meter.modelBadgeText}`;
+          detModelBadge.style.display = 'block';
+        } else {
+          detModelBadge.style.display = 'none';
+        }
+
+        if (payload.meter.projectedExhaustionText) {
+          detProjection.textContent = `⏳ ${payload.meter.projectedExhaustionText}`;
+          detProjection.style.display = 'block';
+        } else {
+          detProjection.style.display = 'none';
+        }
+
+        if (payload.meter.earlyResetsNote) {
+          detEarlyResets.textContent = `⚠️ ${payload.meter.earlyResetsNote}`;
+          detEarlyResets.style.display = 'block';
+        } else {
+          detEarlyResets.style.display = 'none';
+        }
+
+        if (payload.meter.isStale) {
+          detStaleReason.textContent = `⚠️ Stale reading: ${payload.meter.staleReason || 'Older than 30m or reset passed'}`;
+          detStaleReason.style.display = 'block';
+        } else {
+          detStaleReason.style.display = 'none';
+        }
+      }
+
+      // Plain language message line (never raw rule name)
+      if (payload.reason) {
+        // Strip any leading DEMO prefixes or raw rule names if present
+        let cleanReason = payload.reason
+          .replace(/^DEMO ALERT:\s*/i, '')
+          .replace(/^DEMO:\s*/i, '')
+          .replace(/^TEST ALERT:\s*/i, '')
+          .replace(/\[\w+\]\s*/g, '');
+        messageLine.textContent = cleanReason || 'Quota is healthy · Sustainable pace';
+      } else {
+        messageLine.textContent = 'Quota is healthy · Sustainable pace';
+      }
+
+      // Advice in details
+      if (payload.advice) {
+        detAdvice.textContent = `Action: ${payload.advice}`;
+        detAdvice.style.display = 'block';
+      } else {
+        detAdvice.style.display = 'none';
+      }
+
+      if (payload.contextTokens) detContext.textContent = payload.contextTokens.toLocaleString();
+      if (payload.turnIndex) detTurn.textContent = payload.turnIndex;
+    }
+
+    // IPC Listeners
+    ipcRenderer.on('panel:update', (event, data) => {
+      updatePanel(data);
+    });
+
+    ipcRenderer.on('panel:init-state', (event, { data, isPinned: pinned }) => {
+      isPinned = Boolean(pinned);
+      btnPin.classList.toggle('active', isPinned);
+      btnPin.title = isPinned ? 'Unpin panel' : 'Pin panel open';
+      if (data) updatePanel(data);
+    });
+  </script>
+</body>
+</html>

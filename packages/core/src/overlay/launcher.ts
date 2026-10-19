@@ -16,6 +16,12 @@ export class OverlayLauncher {
   private child: child_process.ChildProcess | null = null;
   private options: OverlayLauncherOptions;
 
+  private restartAttempts = 0;
+  private restartTimer: NodeJS.Timeout | null = null;
+  private resetBackoffTimer: NodeJS.Timeout | null = null;
+  private isShuttingDown = false;
+  private latestPayload: OverlayAlertPayload | null = null;
+
   constructor(options: OverlayLauncherOptions = {}) {
     this.options = options;
   }
@@ -24,7 +30,21 @@ export class OverlayLauncher {
     return this.child !== null && !this.child.killed;
   }
 
+  /**
+   * Starts the overlay at startup and ensures it remains running persistently.
+   */
+  public start(initialPayload?: OverlayAlertPayload): void {
+    this.isShuttingDown = false;
+    if (initialPayload) {
+      this.latestPayload = initialPayload;
+    }
+    if (!this.isRunning()) {
+      this.spawnOverlay(this.latestPayload || initialPayload);
+    }
+  }
+
   public showAlert(payload: OverlayAlertPayload): void {
+    this.latestPayload = payload;
     if (!this.isRunning()) {
       this.spawnOverlay(payload);
     } else if (this.child?.stdin) {
@@ -33,7 +53,26 @@ export class OverlayLauncher {
     }
   }
 
+  public updateMeter(payload: OverlayAlertPayload): void {
+    this.latestPayload = payload;
+    if (!this.isRunning()) {
+      this.spawnOverlay(payload);
+    } else if (this.child?.stdin) {
+      const msg = JSON.stringify({ type: 'METER_UPDATE', payload }) + '\n';
+      this.child.stdin.write(msg);
+    }
+  }
+
   public close(): void {
+    this.isShuttingDown = true;
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+    if (this.resetBackoffTimer) {
+      clearTimeout(this.resetBackoffTimer);
+      this.resetBackoffTimer = null;
+    }
     if (this.child && !this.child.killed) {
       try {
         if (this.child.stdin) {
@@ -122,7 +161,24 @@ export class OverlayLauncher {
 
       this.child.on('exit', () => {
         this.child = null;
+        if (!this.isShuttingDown) {
+          const delayMs = Math.min(30000, 1000 * Math.pow(2, this.restartAttempts));
+          this.restartAttempts++;
+          this.restartTimer = setTimeout(() => {
+            if (!this.isShuttingDown && !this.isRunning()) {
+              this.spawnOverlay(this.latestPayload || undefined);
+            }
+          }, delayMs);
+        }
       });
+
+      // Reset backoff counter after 15 seconds of healthy execution
+      if (this.resetBackoffTimer) clearTimeout(this.resetBackoffTimer);
+      this.resetBackoffTimer = setTimeout(() => {
+        if (this.isRunning()) {
+          this.restartAttempts = 0;
+        }
+      }, 15000);
     } catch {
       this.child = null;
     }

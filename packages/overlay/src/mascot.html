@@ -5,110 +5,46 @@
   <title>TokenPal Mascot</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
+    html, body {
       background: transparent;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       user-select: none;
-      -webkit-app-region: drag;
       overflow: hidden;
-      width: 360px;
-      height: 250px;
-      padding: 10px;
+      width: 100%;
+      height: 100%;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: flex-end;
+      transition: opacity 0.3s ease;
     }
 
-    /* Speech Bubble */
-    .bubble {
-      background: rgba(15, 23, 42, 0.92);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 12px;
-      padding: 12px 14px;
-      color: #f8fafc;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
-      width: 100%;
-      margin-bottom: 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      transition: opacity 0.2s ease, transform 0.2s ease;
-      -webkit-app-region: no-drag;
+    body.faded-out {
+      opacity: 0 !important;
+      pointer-events: none !important;
     }
 
-    .bubble-header {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .badge-green { color: #10b981; }
-    .badge-yellow { color: #f59e0b; }
-    .badge-red { color: #ef4444; }
-
-    .bubble-reason {
-      font-size: 12px;
-      line-height: 1.4;
-      color: #e2e8f0;
-      font-weight: 500;
-    }
-
-    .bubble-advice {
-      font-size: 11px;
-      color: #94a3b8;
-    }
-
-    .bubble-actions {
-      display: flex;
-      gap: 6px;
-      margin-top: 4px;
-      flex-wrap: wrap;
-    }
-
-    button {
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      color: #f8fafc;
-      padding: 5px 10px;
-      border-radius: 6px;
-      font-size: 11px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      outline: none;
-    }
-    button:hover {
-      background: rgba(255, 255, 255, 0.2);
-      border-color: rgba(255, 255, 255, 0.35);
-    }
-    button.primary {
-      background: #3b82f6;
-      border-color: #60a5fa;
-      color: #fff;
-    }
-    button.primary:hover {
-      background: #2563eb;
-    }
-
-    /* Details Panel */
-    .details {
+    /* Info Notice Speech Bubble (auto-hides after ~6s) */
+    .notice-bubble {
       display: none;
-      flex-direction: column;
-      font-size: 10px;
-      color: #94a3b8;
-      border-top: 1px solid rgba(255, 255, 255, 0.1);
-      padding-top: 6px;
-      gap: 4px;
-      max-height: 130px;
-      overflow-y: auto;
+      background: rgba(15, 23, 42, 0.96);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      padding: 6px 10px;
+      color: #f8fafc;
+      font-size: 11px;
+      font-weight: 600;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+      margin-bottom: 6px;
+      max-width: 160px;
+      text-align: center;
+      pointer-events: none;
+      animation: fadeIn 0.2s ease;
     }
-    .detail-item {
-      line-height: 1.3;
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     /* Mascot Character Container */
@@ -116,15 +52,31 @@
       width: 64px;
       height: 64px;
       cursor: grab;
-      -webkit-app-region: drag;
       position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.1s ease;
+      flex-shrink: 0;
+    }
+    .mascot-container:active {
+      cursor: grabbing;
     }
 
-    /* Original Geometric Character SVG */
+    /* Canvas for Pixel Mascot Skins */
+    canvas#mascotCanvas {
+      width: 64px;
+      height: 64px;
+      image-rendering: pixelated;
+      filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.45));
+    }
+
+    /* Fallback Geometric Character SVG (hidden when canvas skin is active) */
     svg.mascot-svg {
-      width: 100%;
-      height: 100%;
+      width: 64px;
+      height: 64px;
       filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
+      display: none;
     }
 
     .eye { fill: #f8fafc; transition: all 0.2s; }
@@ -137,77 +89,23 @@
 </head>
 <body>
 
-  <!-- Speech Bubble -->
-  <div class="bubble" id="bubble">
-    <div class="bubble-header">
-      <span id="badge" class="badge-green">● HEALTHY</span>
-      <span id="ruleName" style="opacity: 0.6; font-size: 10px;"></span>
-      <span id="planBadge" style="margin-left: 6px; font-size: 9px; opacity: 0.7; text-transform: uppercase;"></span>
-      <span id="meterPercentText" style="margin-left: auto; font-weight: 700; font-size: 13px;">0%</span>
-    </div>
+  <!-- Notice Speech Bubble (Model Switch & Info, auto-hides after 6s) -->
+  <div class="notice-bubble" id="noticeBubble">💡 Model switch notice</div>
 
-    <!-- Meter Bar and Countdown -->
-    <div id="meterBarContainer" style="display: flex; flex-direction: column; gap: 3px;">
-      <div style="height: 6px; background: rgba(255, 255, 255, 0.15); border-radius: 3px; overflow: hidden;">
-        <div id="meterBarFill" style="height: 100%; width: 0%; background: #3b82f6; border-radius: 3px; transition: width 0.3s ease;"></div>
-      </div>
-      <div style="display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8;">
-        <span id="timeToReset">Resets in -</span>
-        <span id="asOfTime">as of -</span>
-      </div>
-    </div>
-
-    <!-- Exactly ONE alert line by default -->
-    <div class="bubble-reason" id="alertLine">Quota is healthy</div>
-
-    <!-- Actions (Compact) -->
-    <div class="bubble-actions">
-      <button id="btnDetails">Details ▾</button>
-      <button id="btnSnooze">Snooze 30m</button>
-      <button id="btnDismiss">Dismiss</button>
-    </div>
-
-    <!-- Details Panel (hidden by default) -->
-    <div class="details" id="detailsPanel">
-      <div id="staleDetail" class="detail-item" style="display: none; color: #f59e0b;"></div>
-      <div id="advice" class="bubble-advice" style="display: none; margin-bottom: 4px;"></div>
-      <div id="earlyResetsNote" class="detail-item" style="display: none; color: #f59e0b;"></div>
-      <div id="projectionNote" class="detail-item" style="display: none; color: #fbbf24;"></div>
-      <div id="modelBadge" class="detail-item" style="display: none; color: #93c5fd;"></div>
-      <div id="requestCost" class="detail-item" style="display: none; color: #a7f3d0;"></div>
-      <div class="detail-item">Resets at: <span id="detResetTime">-</span></div>
-      <div class="detail-item">Last meter update: <span id="detAsOfTime">-</span></div>
-      <div class="detail-item">Context: <span id="detContext">0</span> tokens | Turn: <span id="detTurn">0</span></div>
-      <div class="detail-item">Model: <span id="detModel">-</span></div>
-      <div style="margin-top: 6px;">
-        <button class="primary" id="btnHandoff" style="width: 100%;">Copy Handoff</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Mascot Character -->
+  <!-- Mascot Character Container (Canvas pixel art or fallback SVG) -->
   <div class="mascot-container" id="mascot">
-    <svg class="mascot-svg" viewBox="0 0 64 64">
-      <!-- Antenna -->
+    <canvas id="mascotCanvas" width="32" height="32"></canvas>
+
+    <!-- Fallback Geometric Robot SVG -->
+    <svg class="mascot-svg" id="mascotSvg" viewBox="0 0 64 64">
       <line x1="32" y1="14" x2="32" y2="4" stroke="#94a3b8" stroke-width="2.5" stroke-linecap="round" />
       <circle id="antennaOrb" cx="32" cy="4" r="3.5" class="core core-green" />
-
-      <!-- Head / Body Capsule -->
       <rect x="12" y="14" width="40" height="42" rx="16" fill="#1e293b" stroke="#334155" stroke-width="2" />
-
-      <!-- Face Visor -->
       <rect x="18" y="22" width="28" height="18" rx="8" fill="#0f172a" />
-
-      <!-- Digital Eyes -->
       <circle id="eyeLeft" class="eye" cx="26" cy="30" r="3" />
       <circle id="eyeRight" class="eye" cx="38" cy="30" r="3" />
-
-      <!-- Chest Core Beacon -->
       <circle id="chestCore" cx="32" cy="46" r="4.5" class="core core-green" />
-
-      <!-- Left Arm -->
       <path id="armLeft" d="M 12 34 Q 6 36 8 44" stroke="#94a3b8" stroke-width="2.5" fill="none" stroke-linecap="round" />
-      <!-- Right Arm (waves during red alert) -->
       <path id="armRight" d="M 52 34 Q 58 36 56 44" stroke="#94a3b8" stroke-width="2.5" fill="none" stroke-linecap="round" />
     </svg>
   </div>
@@ -215,48 +113,188 @@
   <script>
     const { ipcRenderer } = require('electron');
 
-    const bubble = document.getElementById('bubble');
-    const badge = document.getElementById('badge');
-    const ruleName = document.getElementById('ruleName');
-    const planBadge = document.getElementById('planBadge');
-    const meterPercentText = document.getElementById('meterPercentText');
-    const timeToReset = document.getElementById('timeToReset');
-    const asOfTime = document.getElementById('asOfTime');
-    const meterBarFill = document.getElementById('meterBarFill');
-    const alertLine = document.getElementById('alertLine');
-
-    const btnDetails = document.getElementById('btnDetails');
-    const detailsPanel = document.getElementById('detailsPanel');
-    const staleDetail = document.getElementById('staleDetail');
-    const advice = document.getElementById('advice');
-    const earlyResetsNote = document.getElementById('earlyResetsNote');
-    const projectionNote = document.getElementById('projectionNote');
-    const modelBadge = document.getElementById('modelBadge');
-    const requestCost = document.getElementById('requestCost');
-    const detResetTime = document.getElementById('detResetTime');
-    const detAsOfTime = document.getElementById('detAsOfTime');
-    const detContext = document.getElementById('detContext');
-    const detTurn = document.getElementById('detTurn');
-    const detModel = document.getElementById('detModel');
-
+    const noticeBubble = document.getElementById('noticeBubble');
+    const mascot = document.getElementById('mascot');
+    const mascotCanvas = document.getElementById('mascotCanvas');
+    const ctx = mascotCanvas.getContext('2d');
+    const mascotSvg = document.getElementById('mascotSvg');
     const antennaOrb = document.getElementById('antennaOrb');
     const chestCore = document.getElementById('chestCore');
     const armRight = document.getElementById('armRight');
-    const mascot = document.getElementById('mascot');
 
     let currentState = 'green';
+    let currentRule = '';
+    let isWalking = false;
     let isLowPower = false;
-    let isRoaming = false;
     let animationActive = true;
+    let activeAnimationName = 'idle';
+    let healthyTicks = 0;
+    let isNoticeActive = false;
+    let isStaleActive = false;
+    let isExpensiveRequest = false;
+    let noticeTimer = null;
+
+    // Skin & Settings State
+    let currentSkin = null;
+    let currentSettings = {
+      skin: 'cat',
+      colorTint: 'none',
+      accessories: { hat: false, glasses: false, bow: false },
+      size: 1.0,
+      opacity: 1.0,
+      name: 'Pal',
+      roam: false
+    };
+
+    let spriteImg = new Image();
+    let spriteLoaded = false;
 
     // 18 FPS Throttled Loop
     const TARGET_FPS = 18;
     const FRAME_INTERVAL = 1000 / TARGET_FPS;
     let lastFrameTime = performance.now();
     let tickCount = 0;
-    let lastFpsUpdate = performance.now();
-    let frameCounter = 0;
+    let animFrameIndex = 0;
+    let lastAnimStepTime = performance.now();
 
+    function applySkin(skinDef) {
+      if (!skinDef) return;
+      currentSkin = skinDef;
+      if (skinDef.spriteSheet) {
+        spriteLoaded = false;
+        spriteImg.onload = () => {
+          spriteLoaded = true;
+          mascotCanvas.style.display = 'block';
+          mascotSvg.style.display = 'none';
+        };
+        spriteImg.onerror = () => {
+          spriteLoaded = false;
+          mascotCanvas.style.display = 'none';
+          mascotSvg.style.display = 'block';
+        };
+        spriteImg.src = `file://${skinDef.spriteSheet}`;
+      } else {
+        spriteLoaded = false;
+        mascotCanvas.style.display = 'none';
+        mascotSvg.style.display = 'block';
+      }
+    }
+
+    function applySettings(settings) {
+      if (!settings) return;
+      currentSettings = settings;
+
+      const scale = typeof settings.size === 'number' ? settings.size : 1.0;
+      mascot.style.transform = `scale(${scale})`;
+
+      const opacity = typeof settings.opacity === 'number' ? settings.opacity : 1.0;
+      mascot.style.opacity = opacity.toString();
+    }
+
+    // State to Animation Mapping
+    function resolveCurrentAnimation() {
+      if (isWalking) return 'walk';
+      if (isNoticeActive) return 'happy';
+      if (isExpensiveRequest || currentRule === 'single_request_high') {
+        return (currentSkin?.animations?.curious) ? 'curious' : 'idle';
+      }
+      if (isStaleActive) return 'sleep';
+      if (currentState === 'red' || currentState === 'yellow' || currentRule) return 'alert';
+      if (currentState === 'green') {
+        if (healthyTicks > 250 && (healthyTicks % 400 < 150)) {
+          return 'sleep';
+        }
+        return 'idle';
+      }
+      return 'idle';
+    }
+
+    function getAnimationFrames(animName) {
+      if (!currentSkin || !currentSkin.animations) {
+        return [0];
+      }
+      const raw = currentSkin.animations[animName] || currentSkin.animations.idle;
+      if (Array.isArray(raw)) return raw;
+      if (typeof raw === 'object' && typeof raw.from === 'number' && typeof raw.to === 'number') {
+        const frames = [];
+        for (let i = raw.from; i <= raw.to; i++) frames.push(i);
+        return frames;
+      }
+      return [0];
+    }
+
+    function renderCanvasFrame() {
+      ctx.clearRect(0, 0, 32, 32);
+      if (!spriteLoaded || !currentSkin) return;
+
+      const fw = currentSkin.frameSize?.width || 32;
+      const fh = currentSkin.frameSize?.height || 32;
+      const frames = getAnimationFrames(activeAnimationName);
+      const frameNum = frames[animFrameIndex % frames.length];
+
+      ctx.save();
+
+      // Color Tint Filter from skin palettes
+      const tint = currentSettings.colorTint || 'none';
+      if (currentSkin.tintPalettes && currentSkin.tintPalettes[tint]) {
+        ctx.filter = currentSkin.tintPalettes[tint];
+      } else if (tint === 'amber') {
+        ctx.filter = 'hue-rotate(20deg) saturate(1.4)';
+      } else if (tint === 'sapphire') {
+        ctx.filter = 'hue-rotate(180deg) saturate(1.2)';
+      } else if (tint === 'emerald') {
+        ctx.filter = 'hue-rotate(90deg) saturate(1.3)';
+      } else if (tint === 'rose') {
+        ctx.filter = 'hue-rotate(310deg) saturate(1.5)';
+      } else if (tint === 'violet') {
+        ctx.filter = 'hue-rotate(240deg) saturate(1.3)';
+      } else if (tint === 'slate') {
+        ctx.filter = 'grayscale(100%) brightness(0.9)';
+      }
+
+      ctx.drawImage(spriteImg, frameNum * fw, 0, fw, fh, 0, 0, 32, 32);
+      ctx.restore();
+
+      // Render Accessories using per-skin accessoryAnchors
+      const anchors = currentSkin.accessoryAnchors || {
+        hat: { x: 11, y: 4 },
+        glasses: { x: 10, y: 12 },
+        bow: { x: 15, y: 23 }
+      };
+
+      if (currentSettings.accessories?.hat) {
+        const ax = anchors.hat?.x ?? 11;
+        const ay = anchors.hat?.y ?? 4;
+        ctx.fillStyle = '#6366f1';
+        ctx.fillRect(ax, ay, 10, 4);
+        ctx.fillRect(ax - 3, ay + 3, 16, 2);
+        ctx.fillStyle = '#f59e0b';
+        ctx.fillRect(ax, ay + 2, 10, 1);
+      }
+
+      if (currentSettings.accessories?.glasses) {
+        const gx = anchors.glasses?.x ?? 10;
+        const gy = anchors.glasses?.y ?? 12;
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(gx, gy, 5, 4);
+        ctx.fillRect(gx + 7, gy, 5, 4);
+        ctx.fillRect(gx + 5, gy + 1, 2, 1);
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillRect(gx + 1, gy + 1, 3, 2);
+        ctx.fillRect(gx + 8, gy + 1, 3, 2);
+      }
+
+      if (currentSettings.accessories?.bow) {
+        const bx = anchors.bow?.x ?? 15;
+        const by = anchors.bow?.y ?? 23;
+        ctx.fillStyle = '#ec4899';
+        ctx.fillRect(bx - 2, by - 1, 2, 2);
+        ctx.fillRect(bx + 2, by - 1, 2, 2);
+        ctx.fillRect(bx, by, 2, 2);
+      }
+    }
+
+    // 18 FPS Main Render Loop
     function renderLoop(now) {
       if (!animationActive || isLowPower) return;
       requestAnimationFrame(renderLoop);
@@ -265,31 +303,37 @@
       if (delta < FRAME_INTERVAL) return;
       lastFrameTime = now - (delta % FRAME_INTERVAL);
       tickCount++;
-      frameCounter++;
 
-      if (now - lastFpsUpdate >= 1000) {
-        const actualFps = Math.round((frameCounter * 1000) / (now - lastFpsUpdate));
-        console.log(`[TokenPal Animation] FPS: ${actualFps} | Total Frames: ${tickCount}`);
-        frameCounter = 0;
-        lastFpsUpdate = now;
+      if (currentState === 'green') healthyTicks++;
+      else healthyTicks = 0;
+
+      activeAnimationName = resolveCurrentAnimation();
+
+      const skinFps = Math.min(18, Math.max(1, currentSkin?.fps || 6));
+      const skinFrameInterval = 1000 / skinFps;
+      if (now - lastAnimStepTime >= skinFrameInterval) {
+        animFrameIndex++;
+        lastAnimStepTime = now;
       }
 
-      // Calm breathing / bobbing
-      if (currentState === 'green') {
-        const yOffset = Math.sin(tickCount * 0.1) * 2;
-        mascot.style.transform = `translateY(${yOffset}px)`;
-        armRight.setAttribute('d', 'M 52 34 Q 58 36 56 44');
-      } else if (currentState === 'yellow') {
-        // Warning gentle pulse
-        const yOffset = Math.sin(tickCount * 0.15) * 3;
-        mascot.style.transform = `translateY(${yOffset}px)`;
-        armRight.setAttribute('d', 'M 52 34 Q 58 36 56 44');
-      } else if (currentState === 'red') {
-        // Urgent waving gesture
-        const armAngle = Math.sin(tickCount * 0.4) * 8;
-        armRight.setAttribute('d', `M 52 34 Q 60 ${20 + armAngle} 58 ${16 - armAngle}`);
-        const shake = (tickCount % 2 === 0) ? -1 : 1;
-        mascot.style.transform = `translateX(${shake}px)`;
+      if (spriteLoaded) {
+        renderCanvasFrame();
+      } else {
+        // Fallback SVG animation
+        if (currentState === 'green') {
+          const yOffset = Math.sin(tickCount * 0.1) * 2;
+          mascotSvg.style.transform = `translateY(${yOffset}px)`;
+          armRight.setAttribute('d', 'M 52 34 Q 58 36 56 44');
+        } else if (currentState === 'yellow') {
+          const yOffset = Math.sin(tickCount * 0.15) * 3;
+          mascotSvg.style.transform = `translateY(${yOffset}px)`;
+          armRight.setAttribute('d', 'M 52 34 Q 58 36 56 44');
+        } else if (currentState === 'red') {
+          const armAngle = Math.sin(tickCount * 0.4) * 8;
+          armRight.setAttribute('d', `M 52 34 Q 60 ${20 + armAngle} 58 ${16 - armAngle}`);
+          const shake = (tickCount % 2 === 0) ? -1 : 1;
+          mascotSvg.style.transform = `translateX(${shake}px)`;
+        }
       }
     }
 
@@ -297,139 +341,114 @@
 
     function updateState(payload) {
       currentState = payload.state || 'green';
+      currentRule = payload.rule || '';
 
-      badge.className = `badge-${currentState}`;
-      badge.textContent = payload.rule ? `● ${currentState.toUpperCase()}` : '● HEALTHY';
-      ruleName.textContent = payload.rule ? `[${payload.rule}]` : '';
-
-      if (payload.meter) {
-        const used = Math.round(payload.meter.usedPercent || 0);
-        meterPercentText.textContent = `${used}%`;
-        meterBarFill.style.width = `${Math.min(100, Math.max(0, used))}%`;
-        if (used >= 85) {
-          meterBarFill.style.background = '#ef4444';
-        } else if (used >= 65) {
-          meterBarFill.style.background = '#f59e0b';
-        } else {
-          meterBarFill.style.background = '#3b82f6';
-        }
-
-        if (payload.meter.resetsAtLocal && payload.meter.timeToResetFormatted) {
-          timeToReset.textContent = `Resets in ${payload.meter.timeToResetFormatted} (${payload.meter.resetsAtLocal})`;
-        } else if (payload.meter.timeToResetFormatted) {
-          timeToReset.textContent = `Resets in ${payload.meter.timeToResetFormatted}`;
-        } else {
-          timeToReset.textContent = 'Resets in -';
-        }
-
-        if (payload.meter.asOfLocal) {
-          asOfTime.textContent = payload.meter.isStale
-            ? `as of ${payload.meter.asOfLocal} (STALE)`
-            : `as of ${payload.meter.asOfLocal}`;
-          asOfTime.style.color = payload.meter.isStale ? '#f59e0b' : '#94a3b8';
-        } else {
-          asOfTime.textContent = '';
-        }
-
-        planBadge.textContent = payload.meter.planType || '';
-
-        // Details Panel Items
-        if (payload.meter.isStale) {
-          staleDetail.textContent = `⚠️ Stale reading: ${payload.meter.staleReason || 'Older than 30m or reset passed'}`;
-          staleDetail.style.display = 'block';
-        } else {
-          staleDetail.style.display = 'none';
-        }
-
-        if (payload.meter.resetsAtLocal) {
-          detResetTime.textContent = payload.meter.resetsAtLocal;
-        }
-        if (payload.meter.asOfLocal) {
-          detAsOfTime.textContent = payload.meter.asOfLocal;
-        }
-
-        if (payload.meter.earlyResetsNote) {
-          earlyResetsNote.textContent = `⚠️ ${payload.meter.earlyResetsNote}`;
-          earlyResetsNote.style.display = 'block';
-        } else {
-          earlyResetsNote.style.display = 'none';
-        }
-
-        if (payload.meter.projectedExhaustionText) {
-          projectionNote.textContent = `⏳ ${payload.meter.projectedExhaustionText}`;
-          projectionNote.style.display = 'block';
-        } else {
-          projectionNote.style.display = 'none';
-        }
-
-        if (payload.meter.modelBadgeText) {
-          modelBadge.textContent = `💡 ${payload.meter.modelBadgeText}`;
-          modelBadge.style.display = 'block';
-        } else {
-          modelBadge.style.display = 'none';
-        }
-
-        if (payload.meter.requestCostDisplay) {
-          requestCost.textContent = `📊 Last request: ${payload.meter.requestCostDisplay}`;
-          requestCost.style.display = 'block';
-        } else {
-          requestCost.style.display = 'none';
-        }
+      if (payload.animationOverride) {
+        activeAnimationName = payload.animationOverride;
       }
 
-      // Exactly ONE alert line by default
-      if (payload.rule && payload.reason) {
-        alertLine.textContent = payload.reason;
-      } else if (payload.meter?.isStale) {
-        badge.className = 'badge-yellow';
-        badge.textContent = '● STALE';
-        alertLine.textContent = payload.meter.staleReason
-          ? `⚠️ Stale reading: ${payload.meter.staleReason}`
-          : '⚠️ Stale meter reading (>30m old)';
-      } else {
-        alertLine.textContent = 'Quota is healthy · No alerts';
+      // Check info notice
+      if (payload.notice) {
+        isNoticeActive = true;
+        noticeBubble.textContent = `💡 ${payload.notice}`;
+        noticeBubble.style.display = 'block';
+        if (noticeTimer) clearTimeout(noticeTimer);
+        noticeTimer = setTimeout(() => {
+          isNoticeActive = false;
+          noticeBubble.style.display = 'none';
+        }, 6000);
       }
 
-      // Advice placed inside details panel
-      if (payload.advice) {
-        advice.textContent = `Action: ${payload.advice}`;
-        advice.style.display = 'block';
-      } else {
-        advice.style.display = 'none';
-      }
+      // Stale state (sleeping mascot, no popup)
+      isStaleActive = Boolean(payload.meter?.isStale && !currentRule);
 
-      if (payload.contextTokens) detContext.textContent = payload.contextTokens.toLocaleString();
-      if (payload.turnIndex) detTurn.textContent = payload.turnIndex;
-      if (payload.model) detModel.textContent = payload.model;
+      // Expensive request check
+      isExpensiveRequest = Boolean(payload.rule === 'single_request_high');
 
       antennaOrb.className.baseVal = `core core-${currentState}`;
       chestCore.className.baseVal = `core core-${currentState}`;
-
-      bubble.style.display = 'flex';
     }
 
-    // Button actions
-    document.getElementById('btnHandoff').addEventListener('click', () => {
-      ipcRenderer.send('action:copy-handoff');
+    // Dragging & Click Handling with Movement Threshold
+    const DRAG_THRESHOLD = 5;
+    let isMouseDown = false;
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+
+    mascot.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      isMouseDown = true;
+      isDragging = false;
+      dragStartX = e.screenX;
+      dragStartY = e.screenY;
+      ipcRenderer.send('window:drag-start');
     });
 
-    document.getElementById('btnSnooze').addEventListener('click', () => {
-      ipcRenderer.send('action:snooze', 30);
+    window.addEventListener('mousemove', (e) => {
+      if (!isMouseDown) return;
+      const totalDist = Math.hypot(e.screenX - dragStartX, e.screenY - dragStartY);
+
+      if (!isDragging && totalDist >= DRAG_THRESHOLD) {
+        isDragging = true;
+      }
+
+      if (isDragging) {
+        const deltaX = e.screenX - dragStartX;
+        const deltaY = e.screenY - dragStartY;
+        ipcRenderer.send('window:drag-move', { deltaX, deltaY });
+        dragStartX = e.screenX;
+        dragStartY = e.screenY;
+      }
     });
 
-    document.getElementById('btnDismiss').addEventListener('click', () => {
-      ipcRenderer.send('action:dismiss');
+    window.addEventListener('mouseup', () => {
+      if (!isMouseDown) return;
+      isMouseDown = false;
+
+      if (isDragging) {
+        isDragging = false;
+        ipcRenderer.send('window:drag-end');
+      } else {
+        // Click gesture! Toggle status panel
+        ipcRenderer.send('mascot:toggle-panel');
+      }
     });
 
-    btnDetails.addEventListener('click', () => {
-      const isVisible = detailsPanel.style.display === 'flex';
-      detailsPanel.style.display = isVisible ? 'none' : 'flex';
-      btnDetails.textContent = isVisible ? 'Details ▾' : 'Details ▴';
+    // Right-Click Context Menu
+    mascot.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      ipcRenderer.send('overlay:show-context-menu');
     });
 
     // IPC from Main Process
     ipcRenderer.on('overlay:update', (event, data) => {
       updateState(data);
+    });
+
+    ipcRenderer.on('overlay:init-skin', (event, { skin, settings }) => {
+      if (settings) applySettings(settings);
+      if (skin) applySkin(skin);
+    });
+
+    ipcRenderer.on('overlay:settings-updated', (event, { skin, settings }) => {
+      if (settings) applySettings(settings);
+      if (skin) applySkin(skin);
+    });
+
+    ipcRenderer.on('overlay:walking', (event, walking) => {
+      isWalking = Boolean(walking);
+    });
+
+    ipcRenderer.on('overlay:fade', (event, { visible }) => {
+      if (visible) {
+        document.body.classList.remove('faded-out');
+        animationActive = true;
+        requestAnimationFrame(renderLoop);
+      } else {
+        document.body.classList.add('faded-out');
+        animationActive = false;
+      }
     });
 
     ipcRenderer.on('overlay:low-power', (event, enabled) => {

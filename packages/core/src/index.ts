@@ -18,4 +18,7 @@ export * from './summary/ollama.js';
 export * from './settings/manager.js';
 export * from './meter/index.js';
 export * from './daemon/index.js';
+export * from './overlay/skins.js';
+export * from './overlay/positioning.js';
+export * from './overlay/animations.js';
 
