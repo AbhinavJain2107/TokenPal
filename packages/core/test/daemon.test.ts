@@ -213,8 +213,10 @@ describe('Daemon Management', () => {
       expect(status.running).toBe(false);
       expect(status.stalePidCleaned).toBe(4001);
       expect(fs.existsSync(pidFile)).toBe(false);
-      expect(staleReported?.pid).toBe(4001);
-      expect(staleReported?.reason).toContain('pid reused by another command');
+      expect(staleReported).toEqual({
+        pid: 4001,
+        reason: expect.stringContaining('pid reused by another command')
+      });
     });
 
     it('reports running when marker is present in both PID file and command line', () => {
@@ -276,8 +278,10 @@ describe('Daemon Management', () => {
       expect(status.running).toBe(false);
       expect(status.stalePidCleaned).toBe(4200);
       expect(fs.existsSync(pidFile)).toBe(false);
-      expect(staleReported?.pid).toBe(4200);
-      expect(staleReported?.reason).toContain('pid reused by another command');
+      expect(staleReported).toEqual({
+        pid: 4200,
+        reason: expect.stringContaining('pid reused by another command')
+      });
     });
 
     it('rejects PID reuse by tokenpal status when marker is required', () => {
@@ -367,8 +371,10 @@ describe('Daemon Management', () => {
       expect(status.running).toBe(false);
       expect(status.stalePidCleaned).toBe(4500);
       expect(fs.existsSync(pidFile)).toBe(false);
-      expect(staleReported?.pid).toBe(4500);
-      expect(staleReported?.reason).toContain('pid reused by another command');
+      expect(staleReported).toEqual({
+        pid: 4500,
+        reason: expect.stringContaining('pid reused by another command')
+      });
     });
   });
 
