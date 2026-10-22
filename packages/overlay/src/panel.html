@@ -15,13 +15,13 @@
       padding: 8px;
     }
 
-    /* Redesigned Opaque Solid Card */
+    /* Redesigned Symmetrical Obsidian Card */
     .panel-card {
-      background: #0f172a; /* Solid slate dark - completely opaque */
-      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: #111215;
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 14px;
-      color: #f8fafc;
-      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.7);
+      color: #f4f4f5;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 20px 40px rgba(0, 0, 0, 0.65);
       display: flex;
       flex-direction: column;
       gap: 10px;
@@ -38,7 +38,7 @@
       justify-content: space-between;
       gap: 8px;
       padding-bottom: 8px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       cursor: grab;
     }
     .panel-header:active {
@@ -53,18 +53,20 @@
     }
 
     .status-dot {
-      font-size: 13px;
-      line-height: 1;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
       flex-shrink: 0;
+      display: inline-block;
     }
-    .dot-green { color: #10b981; text-shadow: 0 0 6px rgba(16, 185, 129, 0.6); }
-    .dot-yellow { color: #f59e0b; text-shadow: 0 0 6px rgba(245, 158, 11, 0.6); }
-    .dot-red { color: #ef4444; text-shadow: 0 0 8px rgba(239, 68, 68, 0.7); }
+    .dot-green { background-color: #10b981; }
+    .dot-yellow { background-color: #f59e0b; }
+    .dot-red { background-color: #ef4444; }
 
     .panel-title {
       font-size: 13px;
-      font-weight: 700;
-      color: #f1f5f9;
+      font-weight: 600;
+      color: #f4f4f5;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -74,7 +76,7 @@
     .demo-tag {
       display: none;
       background: #f59e0b;
-      color: #0f172a;
+      color: #09090b;
       font-size: 9px;
       font-weight: 800;
       padding: 1px 5px;
@@ -94,40 +96,69 @@
     .icon-btn {
       background: transparent;
       border: none;
-      color: #94a3b8;
-      width: 22px;
-      height: 22px;
-      border-radius: 4px;
+      color: #a1a1aa;
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
       transition: all 0.15s ease;
       outline: none;
     }
     .icon-btn:hover {
-      background: rgba(255, 255, 255, 0.12);
-      color: #f8fafc;
+      background: rgba(255, 255, 255, 0.1);
+      color: #f4f4f5;
     }
     .icon-btn.active {
-      color: #38bdf8;
-      background: rgba(56, 189, 248, 0.15);
+      color: #f4f4f5;
+      background: rgba(255, 255, 255, 0.16);
     }
 
-    /* Percent & Progress Bar Row */
+    /* Integrated Metric Hero Box */
+    .hero-metric-box {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
     .metric-row {
       display: flex;
-      align-items: baseline;
+      align-items: flex-start;
       justify-content: space-between;
       gap: 8px;
+    }
+    .metric-left {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .metric-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #71717a;
     }
     .percent-large {
       font-size: 28px;
       font-weight: 800;
-      color: #f8fafc;
+      color: #f4f4f5;
       line-height: 1;
       letter-spacing: -0.5px;
+      font-feature-settings: "tnum";
+      font-variant-numeric: tabular-nums;
+    }
+    .metric-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
     }
     .plan-badge {
       font-size: 10px;
@@ -137,88 +168,92 @@
       padding: 2px 6px;
       border-radius: 4px;
       background: rgba(255, 255, 255, 0.08);
-      color: #94a3b8;
+      color: #d4d4d8;
       border: 1px solid rgba(255, 255, 255, 0.08);
     }
+    .reset-line {
+      font-size: 11px;
+      color: #a1a1aa;
+      cursor: help;
+    }
 
-    /* Thin Progress Bar */
+    /* Integrated Progress Bar */
     .bar-container {
-      height: 4px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 2px;
+      height: 5px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 3px;
       overflow: hidden;
       width: 100%;
     }
     .bar-fill {
       height: 100%;
       width: 0%;
-      background: #3b82f6;
-      border-radius: 2px;
+      background: #10b981;
+      border-radius: 3px;
       transition: width 0.3s ease, background 0.3s ease;
-    }
-
-    /* Reset Line with Tooltip */
-    .reset-line {
-      font-size: 11px;
-      color: #94a3b8;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      cursor: help;
     }
 
     /* Plain Language Message */
     .message-line {
       font-size: 12px;
       line-height: 1.4;
-      color: #e2e8f0;
+      color: #d4d4d8;
       font-weight: 500;
       min-height: 18px;
+      padding: 0 2px;
     }
 
-    /* Button Actions */
-    .actions-row {
-      display: flex;
+    /* Symmetrical Action Grid */
+    .actions-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
       gap: 6px;
-      align-items: center;
-      margin-top: 2px;
     }
 
     button.btn {
-      padding: 5px 10px;
-      border-radius: 6px;
+      padding: 6px 12px;
+      border-radius: 7px;
       font-size: 11px;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.15s ease;
       outline: none;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      background: rgba(255, 255, 255, 0.08);
-      color: #f8fafc;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
     }
-    button.btn:hover {
-      background: rgba(255, 255, 255, 0.18);
-      border-color: rgba(255, 255, 255, 0.25);
+    button.btn-secondary {
+      background: #18191e;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #a1a1aa;
+    }
+    button.btn-secondary:hover {
+      background: #22232a;
+      border-color: rgba(255, 255, 255, 0.15);
+      color: #f4f4f5;
     }
     button.btn-primary {
-      background: #2563eb;
-      border-color: #3b82f6;
-      color: #fff;
+      background: #27272a;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      color: #f4f4f5;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
     }
     button.btn-primary:hover {
-      background: #1d4ed8;
-      border-color: #60a5fa;
+      background: #323238;
+      border-color: rgba(255, 255, 255, 0.28);
+      color: #fff;
     }
 
     /* Collapsible Details Panel */
     .details-panel {
       display: none;
       flex-direction: column;
-      gap: 5px;
+      gap: 6px;
       font-size: 11px;
-      color: #94a3b8;
-      background: rgba(15, 23, 42, 0.5);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #a1a1aa;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.06);
       border-radius: 8px;
       padding: 8px 10px;
       overflow-y: auto;
@@ -235,9 +270,9 @@
       justify-content: space-between;
       margin-top: auto;
       padding-top: 6px;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
       font-size: 10px;
-      color: #64748b;
+      color: #71717a;
     }
   </style>
 </head>
@@ -247,50 +282,72 @@
     <!-- Header row: status dot, plain language title, pin toggle, close button -->
     <div class="panel-header" id="panelHeader">
       <div class="header-left">
-        <span class="status-dot dot-green" id="statusDot">●</span>
+        <span class="status-dot dot-green" id="statusDot"></span>
         <span class="panel-title" id="panelTitle">All good</span>
         <span class="demo-tag" id="demoTag">DEMO</span>
       </div>
       <div class="header-controls">
-        <button class="icon-btn" id="btnPin" title="Pin panel open">📌</button>
-        <button class="icon-btn" id="btnClose" title="Close (Esc)">✕</button>
+        <button class="icon-btn" id="btnPin" title="Pin panel open">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="17" x2="12" y2="22"></line>
+            <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+          </svg>
+        </button>
+        <button class="icon-btn" id="btnClose" title="Close (Esc)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
       </div>
     </div>
 
-    <!-- Large Percent & Plan Badge -->
-    <div class="metric-row">
-      <div class="percent-large" id="percentLarge">0%</div>
-      <div class="plan-badge" id="planBadge">PLAN</div>
+    <!-- Integrated Metric Hero Box -->
+    <div class="hero-metric-box">
+      <div class="metric-row">
+        <div class="metric-left">
+          <span class="metric-label">Weekly Quota</span>
+          <div class="percent-large" id="percentLarge">0%</div>
+        </div>
+        <div class="metric-right">
+          <div class="plan-badge" id="planBadge">PLAN</div>
+          <div class="reset-line" id="resetLine" title="Scheduled reset time">Resets in -</div>
+        </div>
+      </div>
+      <!-- Progress Bar Integrated inside Hero Box -->
+      <div class="bar-container">
+        <div class="bar-fill" id="barFill"></div>
+      </div>
     </div>
-
-    <!-- Thin Progress Bar -->
-    <div class="bar-container">
-      <div class="bar-fill" id="barFill"></div>
-    </div>
-
-    <!-- Single Reset Line with Local Date Tooltip -->
-    <div class="reset-line" id="resetLine" title="Scheduled reset time">Resets in -</div>
 
     <!-- Plain-Language Message Line (Never internal rule name) -->
     <div class="message-line" id="messageLine">Quota is healthy · Sustainable pace</div>
 
-    <!-- Buttons Row: Primary Snooze, Secondary Dismiss, Details, Customize -->
-    <div class="actions-row">
+    <!-- Perfectly Symmetrical Action Grid -->
+    <div class="actions-grid">
       <button class="btn btn-primary" id="btnSnooze">Snooze 30m</button>
-      <button class="btn" id="btnDismiss">Dismiss</button>
-      <button class="btn" id="btnDetails">Details ▾</button>
-      <button class="btn" id="btnCustomize" title="Customize mascot">🎨</button>
+      <button class="btn btn-secondary" id="btnDismiss">Dismiss</button>
+    </div>
+    <div class="actions-grid">
+      <button class="btn btn-secondary" id="btnDetails">
+        <span>Details</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <button class="btn btn-secondary" id="btnCustomize" title="Customize mascot">
+        <span>Customize</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/></svg>
+      </button>
     </div>
 
     <!-- Collapsible Details Section -->
     <div class="details-panel" id="detailsPanel">
-      <div class="detail-row" id="detRequestCost" style="display: none; color: #a7f3d0;"></div>
-      <div class="detail-row" id="detModelBadge" style="display: none; color: #93c5fd;"></div>
-      <div class="detail-row" id="detProjection" style="display: none; color: #fde68a;"></div>
+      <div class="detail-row" id="detRequestCost" style="display: none; color: #34d399;"></div>
+      <div class="detail-row" id="detModelBadge" style="display: none; color: #e4e4e7;"></div>
+      <div class="detail-row" id="detProjection" style="display: none; color: #fbbf24;"></div>
       <div class="detail-row" id="detEarlyResets" style="display: none; color: #f59e0b;"></div>
-      <div class="detail-row" id="detStaleReason" style="display: none; color: #f59e0b;"></div>
-      <div class="detail-row" id="detAdvice" style="display: none; color: #e2e8f0; font-weight: 500;"></div>
-      <div class="detail-row" style="color: #64748b; font-size: 10px;">ℹ️ Meter reflects usage across all active sessions</div>
+      <div class="detail-row" id="detStaleReason" style="display: none; color: #f87171;"></div>
+      <div class="detail-row" id="detAdvice" style="display: none; color: #f4f4f5; font-weight: 500;"></div>
+      <div class="detail-row" style="color: #71717a; font-size: 10px;">ℹ️ Meter reflects usage across all active sessions</div>
       <div class="detail-row">Context: <span id="detContext">0</span> tokens | Turn: <span id="detTurn">0</span></div>
       <div style="margin-top: 6px;">
         <button class="btn btn-primary" id="btnHandoff" style="width: 100%;">Copy Handoff</button>
@@ -409,7 +466,9 @@
     btnDetails.addEventListener('click', () => {
       const isVisible = detailsPanel.style.display === 'flex';
       detailsPanel.style.display = isVisible ? 'none' : 'flex';
-      btnDetails.textContent = isVisible ? 'Details ▾' : 'Details ▴';
+      btnDetails.innerHTML = isVisible
+        ? '<span>Details</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>'
+        : '<span>Details</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 15-6-6-6 6"/></svg>';
     });
 
     // Helpers to derive plain language titles (NEVER internal rule names)
@@ -454,7 +513,7 @@
         barFill.style.width = `${Math.min(100, Math.max(0, used))}%`;
         if (used >= 85) barFill.style.background = '#ef4444';
         else if (used >= 65) barFill.style.background = '#f59e0b';
-        else barFill.style.background = '#3b82f6';
+        else barFill.style.background = '#10b981';
 
         planBadge.textContent = (payload.meter.planType || 'ACTIVE').toUpperCase();
 
