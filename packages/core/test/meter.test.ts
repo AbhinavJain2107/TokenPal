@@ -476,7 +476,8 @@ describe('Rate Limit Meter Redesign', () => {
       ];
       fs.writeFileSync(file2, lines2.join('\n'));
 
-      const status = await readLatestMeterStatus({ sessionsDir, db });
+      const fixedNowEpoch = Math.floor(new Date('2026-10-16T08:00:00.000Z').getTime() / 1000);
+      const status = await readLatestMeterStatus({ sessionsDir, db, customNowEpoch: fixedNowEpoch });
       expect(status).not.toBeNull();
       expect(status!.usedPercent).toBe(12);
       expect(status!.planType).toBe('prolite');

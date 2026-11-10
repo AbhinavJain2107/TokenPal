@@ -1,9 +1,37 @@
 {
   "name": "@tokenpal/core",
   "version": "0.1.0",
+  "description": "Core watcher, rules engine, database, and rate limit meter for TokenPal",
+  "license": "MIT",
+  "author": "Abhinav Jain",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AbhinavJain2107/TokenPal.git",
+    "directory": "packages/core"
+  },
+  "keywords": [
+    "tokenpal",
+    "codex",
+    "context-guardian",
+    "token-counter",
+    "ai-agent",
+    "cost-tracker"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "type-check": "tsc --noEmit"

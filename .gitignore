@@ -13,3 +13,5 @@ PROGRESS.md
 PRD.md
 .env.local
 .env
+.tokenpal/
+*.tgz

@@ -1,12 +1,41 @@
 {
   "name": "@tokenpal/cli",
   "version": "0.1.0",
+  "description": "Command-line interface and daemon manager for TokenPal",
+  "license": "MIT",
+  "author": "Abhinav Jain",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AbhinavJain2107/TokenPal.git",
+    "directory": "packages/cli"
+  },
+  "keywords": [
+    "tokenpal",
+    "codex",
+    "context-guardian",
+    "token-counter",
+    "ai-agent",
+    "cli",
+    "cost-tracker"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "type": "module",
   "bin": {
     "tokenpal": "./dist/index.js"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc && chmod +x dist/index.js",
     "type-check": "tsc --noEmit"

@@ -16,7 +16,6 @@ import {
   OverlayLauncher,
   OverlayAlertPayload,
   readLatestMeterStatus,
-  getDemoStates,
   getAllDemoStates,
   DaemonManager,
   enableAutostart,

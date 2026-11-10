@@ -35,6 +35,7 @@ export interface ReadLatestMeterStatusOptions {
   sessionsDir?: string;
   db?: TokenPalDatabase;
   maxRecentFiles?: number;
+  customNowEpoch?: number;
 }
 
 /**
@@ -80,7 +81,7 @@ export async function readLatestMeterStatus(
     const latestSnapshot = db.getLatestMeterSnapshot();
     if (!latestSnapshot) return null;
     const reader = new MeterReader(db);
-    const status = reader.getMeterStatus();
+    const status = reader.getMeterStatus(undefined, options.customNowEpoch);
     if (!status) return null;
     const resets = db.getRecentQuotaResets(1);
     const last = resets.length > 0 ? resets[0] : null;
@@ -180,7 +181,7 @@ export async function readLatestMeterStatus(
     reader.processReading(r);
   }
 
-  const status = reader.getMeterStatus();
+  const status = reader.getMeterStatus(undefined, options.customNowEpoch);
   if (!status) return null;
 
   const recentResets = db.getRecentQuotaResets(1);

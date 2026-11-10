@@ -6,6 +6,12 @@
     "tokenpal": "./packages/cli/dist/index.js"
   },
   "description": "Proactive Context and Token Guardian for AI Coding Agents",
+  "license": "MIT",
+  "author": "Abhinav Jain",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AbhinavJain2107/TokenPal.git"
+  },
   "packageManager": "pnpm@10.30.3",
   "scripts": {
     "build": "pnpm -r run build",
