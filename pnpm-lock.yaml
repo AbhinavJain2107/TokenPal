@@ -29,12 +29,15 @@ importers:
 
   packages/cli:
     dependencies:
-      '@tokenpal/core':
-        specifier: workspace:*
-        version: link:../core
       commander:
         specifier: ^13.1.0
         version: 13.1.0
+      tokenpal-core:
+        specifier: workspace:*
+        version: link:../core
+      tokenpal-overlay:
+        specifier: workspace:*
+        version: link:../overlay
 
   packages/core:
     dependencies:
@@ -51,7 +54,7 @@ importers:
 
   packages/overlay:
     dependencies:
-      '@tokenpal/core':
+      tokenpal-core:
         specifier: workspace:*
         version: link:../core
     devDependencies:

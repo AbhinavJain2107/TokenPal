@@ -22,7 +22,7 @@ import {
   disableAutostart,
   writePidFileAtomic,
   DAEMON_FLAG_MARKER
-} from '@tokenpal/core';
+} from 'tokenpal-core';
 
 const program = new Command();
 let staleNotice: string | null = null;

@@ -1,5 +1,5 @@
 {
-  "name": "@tokenpal/cli",
+  "name": "tokenpal",
   "version": "0.1.0",
   "description": "Command-line interface and daemon manager for TokenPal",
   "license": "MIT",
@@ -41,7 +41,8 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@tokenpal/core": "workspace:*",
+    "tokenpal-core": "workspace:*",
+    "tokenpal-overlay": "workspace:*",
     "commander": "^13.1.0"
   }
 }

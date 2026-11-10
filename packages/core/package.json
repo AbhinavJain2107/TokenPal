@@ -1,5 +1,5 @@
 {
-  "name": "@tokenpal/core",
+  "name": "tokenpal-core",
   "version": "0.1.0",
   "description": "Core watcher, rules engine, database, and rate limit meter for TokenPal",
   "license": "MIT",

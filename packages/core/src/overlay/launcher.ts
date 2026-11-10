@@ -101,6 +101,16 @@ export class OverlayLauncher {
     for (const p of possiblePaths) {
       if (fs.existsSync(p)) return p;
     }
+
+    try {
+      const req = createRequire(import.meta.url);
+      const overlayPkg = req.resolve('tokenpal-overlay/package.json');
+      const overlayMain = path.resolve(path.dirname(overlayPkg), 'dist/main.js');
+      if (fs.existsSync(overlayMain)) return overlayMain;
+    } catch {
+      // ignore
+    }
+
     return null;
   }
 

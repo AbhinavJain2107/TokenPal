@@ -9,7 +9,7 @@ import {
   OverlaySettingsConfig,
   DEFAULT_OVERLAY_SETTINGS,
   calculatePanelPosition
-} from '@tokenpal/core';
+} from 'tokenpal-core';
 import { OverlayAlertPayload } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);

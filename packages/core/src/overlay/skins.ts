@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 export interface SkinAnimationRange {
   from: number;
@@ -232,6 +233,17 @@ export function getDefaultBuiltinSkinDirs(): string[] {
     if (fs.existsSync(c) && !dirs.includes(c)) {
       dirs.push(c);
     }
+  }
+
+  try {
+    const req = createRequire(import.meta.url);
+    const overlayPkg = req.resolve('tokenpal-overlay/package.json');
+    const distSkins = path.resolve(path.dirname(overlayPkg), 'dist/skins');
+    if (fs.existsSync(distSkins) && !dirs.includes(distSkins)) {
+      dirs.push(distSkins);
+    }
+  } catch {
+    // ignore
   }
 
   return dirs;

@@ -1,5 +1,5 @@
 {
-  "name": "@tokenpal/overlay",
+  "name": "tokenpal-overlay",
   "version": "0.1.0",
   "description": "Lightweight Electron desktop mascot companion and status panel for TokenPal",
   "license": "MIT",
@@ -38,7 +38,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@tokenpal/core": "workspace:*"
+    "tokenpal-core": "workspace:*"
   },
   "devDependencies": {
     "electron": "^33.2.1"
