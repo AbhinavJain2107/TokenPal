@@ -1,6 +1,6 @@
 {
   "name": "tokenpal",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Command-line interface and daemon manager for TokenPal",
   "license": "MIT",
   "author": "Abhinav Jain",
