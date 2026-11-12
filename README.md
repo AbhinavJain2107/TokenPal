@@ -3,22 +3,26 @@
 [![npm version](https://img.shields.io/npm/v/tokenpal.svg?color=emerald)](https://www.npmjs.com/package/tokenpal)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg)](https://nodejs.org)
-[![tests](https://img.shields.io/badge/tests-161%20passing-success.svg)](packages/core/test)
+[![tests](https://img.shields.io/badge/tests-169%20passing-success.svg)](packages/core/test)
 
 **Proactive Context & Rate Limit Guardian with Desktop Mascot Companion for AI Coding Agents.**
 
-TokenPal tails local agent session logs in real time (Codex VS Code extension & CLI), calculates weekly quota usage and context growth using deterministic, zero-token local rules, alerts you before conversations become bloated and expensive, and provides a customizable desktop pixel pet that keeps you informed at a glance.
+TokenPal tails local agent session logs in real time (**Claude Code** & **OpenAI Codex**), calculates weekly quota usage and context growth using deterministic, zero-token local rules, alerts you before conversations become bloated and expensive, and provides a customizable desktop pixel pet that keeps you informed at a glance.
 
 ---
 
 ## ✨ Features
 
-- 📊 **Real-Time Rate Limit Meter**: Displays your weekly quota percentage (e.g. `6%`), reset countdown (e.g. `5d 1h`), plan type (`team`, `prolite`), and projected exhaustion pace.
+- 📊 **Real-Time Rate Limit Meter**: Displays your weekly quota percentage (e.g. `9%`), reset countdown (e.g. `5d 0h`), plan type (`team`, `prolite`), and projected exhaustion pace.
+- 🤖 **Multi-Agent Support**: Out-of-the-box streaming log adapters for:
+  - **Claude Code**: Tails `~/.claude/projects/` and `~/.claude/sessions/` with tool use, cache read/write token tracking, and sub-second turn updates.
+  - **OpenAI Codex**: Tails `~/.codex/sessions` (CLI and VS Code extension) with full token and tool call monitoring.
 - 🐾 **Floating Mascot Companion**: A lightweight, customizable desktop pixel pet (Cat, Dog, Fox, Robot) that reacts to agent turns, alerts, and model switches.
+- 🖥️ **Cross-Platform System Tray**: Native template icon for macOS Menu Bar, Windows System Tray, and Linux panel with click-to-toggle status card and right-click settings.
 - 🚶 **Edge Roaming**: When quota is healthy, your mascot companion naturally roams along the bottom of your screen.
-- 🎯 **Smart Visibility ("Only in Coding Apps")**: Automatically stays visible while you code in VS Code, Cursor, Antigravity, Windsurf, Zed, or Terminal, and seamlessly hides when you switch to Google Chrome, Slack, or other apps.
-- ⚡ **Zero Network & Zero LLM Calls**: Completely offline and privacy-first. Tails local session logs (`~/.codex/sessions`) with zero prompt/message text storage—only token counts and guardian metadata in SQLite.
-- 📋 **One-Click Layer A Handoffs**: Extracts factual git status, diff stats, and recent test results into a concise summary to resume cleanly in fresh sessions.
+- 🎯 **Smart Visibility ("Only in Coding Apps")**: Automatically stays visible while you code in VS Code, Cursor, Antigravity, Windsurf, Zed, or Terminal, and seamlessly hides when you switch to Google Chrome, Slack, or other apps (macOS, Linux, Windows).
+- ⚡ **Zero Network & Zero LLM Calls**: Completely offline and privacy-first. Byte-offset incremental log parsing with zero prompt/message text storage—only token counts and guardian metadata in SQLite.
+- 📋 **Active Session Handoffs**: Automatically resolves your active project git branch, diff stats, and human task prompts into clean markdown with instant `✓ Copied!` clipboard feedback.
 
 ---
 
@@ -56,8 +60,8 @@ npx tokenpal start
 | `tokenpal test-alert` | Sends a verification test card to the desktop overlay |
 | `tokenpal logs [-f]` | Views daemon logs with auto-rotation (capped at 5MB) |
 | `tokenpal demo` | Cycles through all mascot visual states with mock data (~5s each) |
-| `tokenpal autostart on\|off` | Configures macOS LaunchAgent to start automatically on login |
-| `tokenpal watch` | Runs guardian watcher directly in foreground terminal mode |
+| `tokenpal autostart on\|off` | Configures autostart on login (macOS LaunchAgent, Linux XDG, Windows Startup) |
+| `tokenpal watch [--no-ui]` | Runs guardian watcher in terminal (optional headless mode with `--no-ui`) |
 | `tokenpal replay <file>` | Replays a past session `.jsonl` file to audit context growth |
 | `tokenpal handoff` | Generates a clean markdown handoff and copies it to clipboard |
 
@@ -82,7 +86,11 @@ Click on the mascot or click the **Customize** button on the status card to open
 
 - **Zero Prompt Storage**: TokenPal log adapters are strictly read-only and never store message bodies, user prompts, code diffs, or LLM responses.
 - **Zero External Calls**: All rules evaluation, projections, and alert cooldowns run locally on your machine.
-- **Lightweight Desktop Footprint**: The Electron overlay runs at capped frame rates with GPU-accelerated canvas rendering, consuming minimal battery and memory.
+- **Incremental Byte-Offset Parsing**: Never re-reads entire log files. Only streams newly appended bytes directly from disk.
+- **Ultra-low Resource Footprint**:
+  - Core Daemon: **< 0.1% CPU**, **~75 MB RAM**.
+  - Headless Mode (`--no-ui`): **~35 MB RAM**.
+  - Electron Overlay: **0.0% idle CPU** with throttled rendering and auto-exit watchdog on parent daemon shutdown.
 
 ---
 
@@ -91,11 +99,11 @@ Click on the mascot or click the **Customize** button on the status card to open
 ```
 TokenPal/
 ├── packages/
-│   ├── core/       # Session adapters, SQLite DB, deterministic rules, handoffs, meter calculations
+│   ├── core/       # Session adapters (Claude Code, Codex), SQLite DB, rules engine, handoffs, meter
 │   ├── cli/        # Command-line interface and daemon management (tokenpal)
 │   └── overlay/    # Electron companion mascot, status panel card, and Mascot Studio
 ├── docs/           # Log schemas, research, and rate limit meter specifications
-└── packages/core/test/ # 161 automated Vitest unit & integration tests
+└── packages/core/test/ # 169 automated Vitest unit & integration tests (18 suites)
 ```
 
 ---

@@ -1,6 +1,6 @@
 {
   "name": "tokenpal-core",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Core watcher, rules engine, database, and rate limit meter for TokenPal",
   "license": "MIT",
   "author": "Abhinav Jain",
