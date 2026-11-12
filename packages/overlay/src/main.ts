@@ -367,6 +367,10 @@ ipcMain.on('window:drag-start', () => {
   isUserDraggingMascot = true;
 });
 
+ipcMain.on('window:drag-cancel', () => {
+  isUserDraggingMascot = false;
+});
+
 ipcMain.on('window:drag-move', (_event, { deltaX, deltaY }) => {
   if (!mascotWindow || mascotWindow.isDestroyed()) return;
   const [currentX, currentY] = mascotWindow.getPosition();
@@ -401,6 +405,7 @@ ipcMain.on('window:drag-end', () => {
 
 // Click mascot to toggle panel
 ipcMain.on('mascot:toggle-panel', () => {
+  isUserDraggingMascot = false;
   isPanelManuallyOpened = true;
   togglePanelVisibility();
 });
@@ -562,7 +567,6 @@ function stepRoaming(): void {
     !mascotWindow ||
     mascotWindow.isDestroyed() ||
     !mascotWindow.isVisible() ||
-    (panelWindow && panelWindow.isVisible()) ||
     currentState === 'red'
   ) {
     return;
@@ -587,8 +591,16 @@ function stepRoaming(): void {
   }
 
   const clamped = clampWindowPosition(nextX, currentY, winWidth, winHeight);
+  const deltaX = clamped.x - currentX;
+  const deltaY = clamped.y - currentY;
 
   mascotWindow.setPosition(clamped.x, clamped.y);
+
+  if (panelWindow && !panelWindow.isDestroyed() && panelWindow.isVisible() && !isPanelPinned) {
+    const [px, py] = panelWindow.getPosition();
+    panelWindow.setPosition(px + deltaX, py + deltaY);
+  }
+
   mascotWindow.webContents.send('overlay:walking', true);
   setTimeout(() => {
     if (mascotWindow && !mascotWindow.isDestroyed()) {
@@ -597,7 +609,7 @@ function stepRoaming(): void {
   }, 600);
 }
 
-setInterval(stepRoaming, 3000);
+setInterval(stepRoaming, 2000);
 
 // ---------------------------------------------------------------------------
 // 7. FRONTMOST APPLICATION & VISIBILITY MODES
@@ -643,10 +655,22 @@ function checkFrontmostApp(): void {
 
       const match = stdout.match(/"([^"]+)"/);
       const frontApp = match ? match[1].trim() : '';
+      const lower = frontApp.toLowerCase();
+
+      // If TokenPal itself is active or open, NEVER hide!
+      if (
+        lower.includes('electron') ||
+        lower.includes('tokenpal') ||
+        Boolean(panelWindow && panelWindow.isVisible()) ||
+        Boolean(customizeWindow && !customizeWindow.isDestroyed())
+      ) {
+        applyAppVisibility(true);
+        return;
+      }
 
       const allowedApps = overlaySettings.codingApps || DEFAULT_OVERLAY_SETTINGS.codingApps;
       const isAllowed = allowedApps.some(
-        (app) => app.toLowerCase() === frontApp.toLowerCase() || frontApp.toLowerCase().includes(app.toLowerCase())
+        (app) => lower === app.toLowerCase() || lower.includes(app.toLowerCase()) || app.toLowerCase().includes(lower)
       );
 
       applyAppVisibility(isAllowed);
@@ -663,11 +687,15 @@ function applyAppVisibility(shouldBeVisible: boolean): void {
     if (isCurrentlyVisible) {
       mascotWindow.showInactive();
     } else {
-      mascotWindow.hide();
+      setTimeout(() => {
+        if (!isCurrentlyVisible && mascotWindow && !mascotWindow.isDestroyed()) {
+          mascotWindow.hide();
+        }
+      }, 300);
     }
   }
   if (panelWindow && !panelWindow.isDestroyed() && !isPanelPinned) {
-    if (!isCurrentlyVisible) {
+    if (!isCurrentlyVisible && !isPanelManuallyOpened) {
       panelWindow.hide();
     }
   }

@@ -400,7 +400,6 @@
       isDragging = false;
       dragStartX = e.screenX;
       dragStartY = e.screenY;
-      ipcRenderer.send('window:drag-start');
     });
 
     window.addEventListener('mousemove', (e) => {
@@ -409,6 +408,7 @@
 
       if (!isDragging && totalDist >= DRAG_THRESHOLD) {
         isDragging = true;
+        ipcRenderer.send('window:drag-start');
       }
 
       if (isDragging) {
@@ -428,7 +428,8 @@
         isDragging = false;
         ipcRenderer.send('window:drag-end');
       } else {
-        // Click gesture! Toggle status panel
+        // Simple click gesture (no drag): toggle status panel
+        ipcRenderer.send('window:drag-cancel');
         ipcRenderer.send('mascot:toggle-panel');
       }
     });
