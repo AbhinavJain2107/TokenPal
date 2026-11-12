@@ -123,8 +123,12 @@ export class ClaudeAdapter implements AgentAdapter {
         continue;
       }
 
-      const ts = event.timestamp || new Date().toISOString();
-      lastEventAt = ts;
+      const ts = event.timestamp || (event.startTime && typeof event.startTime === 'number' ? new Date(event.startTime).toISOString() : (lastEventAt || new Date().toISOString()));
+      if (event.timestamp) {
+        lastEventAt = event.timestamp;
+      } else if (event.startTime && typeof event.startTime === 'number') {
+        lastEventAt = new Date(event.startTime).toISOString();
+      }
 
       // Extract session ID and project path whenever present
       if (event.sessionId || event.session_id) {

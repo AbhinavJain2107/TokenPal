@@ -105,8 +105,12 @@ export class CodexAdapter implements AgentAdapter {
         continue;
       }
 
-      const ts = event.timestamp || new Date().toISOString();
-      lastEventAt = ts;
+      const ts = event.timestamp || (event.payload?.timestamp) || lastEventAt || new Date().toISOString();
+      if (event.timestamp) {
+        lastEventAt = event.timestamp;
+      } else if (event.payload?.timestamp) {
+        lastEventAt = event.payload.timestamp;
+      }
 
       const eventType = event.type;
       const payload = event.payload || {};

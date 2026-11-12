@@ -102,7 +102,22 @@ async function runWatcherForeground(options: {
     }
   } : undefined;
 
-  const launcher = options.ui !== false ? new OverlayLauncher() : null;
+  const launcher = options.ui !== false ? new OverlayLauncher({
+    db,
+    getActiveSessionInfo: () => {
+      const recent = db.getRecentSessions(1);
+      if (recent.length > 0) {
+        const s = recent[0];
+        const logFile = db.getLatestFileOffset(s.id)?.file_path;
+        return {
+          projectPath: s.project_path || undefined,
+          session: s,
+          sessionLogPath: logFile
+        };
+      }
+      return {};
+    }
+  }) : null;
   if (launcher) {
     launcher.start(initialPayload);
   }
@@ -339,6 +354,15 @@ async function runWatcherForeground(options: {
 
   watcher.on('turn', (payload) => {
     const { session, turn, turnIndex, meterStatus } = payload;
+
+    if (launcher) {
+      launcher.setActiveSessionInfo({
+        projectPath: session.project_path || undefined,
+        session,
+        sessionLogPath: db.getLatestFileOffset(session.id)?.file_path
+      });
+    }
+
     const shortId = session.id.slice(0, 8);
     const model = turn.model || 'unknown';
     const effort = turn.effort ? ` [${turn.effort}]` : '';
@@ -869,7 +893,7 @@ program
   .option('-s, --session <id>', 'Specific session ID to summarize')
   .option('--db <path>', 'Path to SQLite database', path.join(os.homedir(), '.tokenpal', 'tokenpal.sqlite'))
   .action(async (options) => {
-    const projectPath = path.resolve(options.project);
+    let projectPath = path.resolve(options.project);
     let session;
     let db: TokenPalDatabase | undefined;
 
@@ -881,6 +905,11 @@ program
         const recent = db.getRecentSessions(1);
         if (recent.length > 0) session = recent[0];
       }
+    }
+
+    // Auto-detect project directory from latest session if not explicitly provided
+    if (options.project === process.cwd() && session?.project_path) {
+      projectPath = session.project_path;
     }
 
     console.log(`Generating handoff for: ${projectPath}`);

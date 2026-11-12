@@ -4,12 +4,16 @@ import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import type { OverlayAlertPayload } from './types.js';
+import type { TokenPalDatabase } from '../db/database.js';
+import type { Session } from '../types.js';
 import { generateLayerAHandoff } from '../handoff/generator.js';
 
 export interface OverlayLauncherOptions {
   onSnooze?: (minutes: number) => void;
   onDismiss?: () => void;
   projectPath?: string;
+  db?: TokenPalDatabase;
+  getActiveSessionInfo?: () => { projectPath?: string; session?: Session; sessionLogPath?: string };
 }
 
 export class OverlayLauncher {
@@ -21,9 +25,14 @@ export class OverlayLauncher {
   private resetBackoffTimer: NodeJS.Timeout | null = null;
   private isShuttingDown = false;
   private latestPayload: OverlayAlertPayload | null = null;
+  private activeSessionInfo?: { projectPath?: string; session?: Session; sessionLogPath?: string };
 
   constructor(options: OverlayLauncherOptions = {}) {
     this.options = options;
+  }
+
+  public setActiveSessionInfo(info: { projectPath?: string; session?: Session; sessionLogPath?: string }): void {
+    this.activeSessionInfo = info;
   }
 
   public isRunning(): boolean {
@@ -180,7 +189,13 @@ export class OverlayLauncher {
           try {
             const msg = JSON.parse(line.trim());
             if (msg.action === 'copy-handoff') {
-              await generateLayerAHandoff({ projectPath: this.options.projectPath });
+              const info = this.options.getActiveSessionInfo?.() || this.activeSessionInfo;
+              await generateLayerAHandoff({
+                projectPath: info?.projectPath || this.options.projectPath,
+                session: info?.session,
+                sessionLogPath: info?.sessionLogPath,
+                db: this.options.db
+              });
             } else if (msg.action === 'snooze') {
               this.options.onSnooze?.(msg.payload || 30);
             } else if (msg.action === 'dismiss') {

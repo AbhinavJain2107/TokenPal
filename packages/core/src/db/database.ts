@@ -173,6 +173,16 @@ export class TokenPalDatabase {
     return stmt.get(filePath) as FileOffset | undefined;
   }
 
+  public getLatestFileOffset(sessionId?: string): FileOffset | undefined {
+    if (sessionId) {
+      const stmt = this.db.prepare('SELECT * FROM file_offsets WHERE last_session_id = ? ORDER BY last_mtime DESC LIMIT 1');
+      const row = stmt.get(sessionId) as FileOffset | undefined;
+      if (row) return row;
+    }
+    const stmt = this.db.prepare('SELECT * FROM file_offsets ORDER BY last_mtime DESC LIMIT 1');
+    return stmt.get() as FileOffset | undefined;
+  }
+
   public setFileOffset(filePath: string, offset: number, lastMtime: number, lastSessionId: string | null = null): void {
     const stmt = this.db.prepare(`
       INSERT INTO file_offsets (file_path, offset, last_mtime, last_session_id)

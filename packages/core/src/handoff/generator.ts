@@ -63,6 +63,22 @@ export function copyToClipboard(text: string): boolean {
   }
 }
 
+function isHumanUserText(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (
+    trimmed.startsWith('<environment_context>') ||
+    trimmed.startsWith('<system-reminder>') ||
+    trimmed.startsWith('<ide_opened_file>') ||
+    trimmed.startsWith('<INSTRUCTIONS>') ||
+    trimmed.startsWith('# AGENTS.md instructions') ||
+    trimmed.startsWith('# Collaboration Preferences')
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export function extractUserMessagesFromLog(filePath: string): { first: string | null; latest: string | null } {
   if (!fs.existsSync(filePath)) return { first: null, latest: null };
   const userMessages: string[] = [];
@@ -70,13 +86,24 @@ export function extractUserMessagesFromLog(filePath: string): { first: string | 
   try {
     const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
     for (const line of lines) {
-      if (!line.trim()) continue;
+      const trimmed = line.trim();
+      if (!trimmed) continue;
       try {
-        const obj = JSON.parse(line);
+        const obj = JSON.parse(trimmed);
+        // Codex format
         if (obj.type === 'response_item' && obj.payload?.role === 'user') {
           const contents = obj.payload.content || [];
           for (const c of contents) {
-            if (c.type === 'input_text' && typeof c.text === 'string' && c.text.trim()) {
+            if (c.type === 'input_text' && typeof c.text === 'string' && isHumanUserText(c.text)) {
+              userMessages.push(c.text.trim());
+            }
+          }
+        }
+        // Claude Code format
+        if (obj.type === 'user') {
+          const contents = Array.isArray(obj.message?.content) ? obj.message.content : [];
+          for (const c of contents) {
+            if (c.type === 'text' && typeof c.text === 'string' && isHumanUserText(c.text)) {
               userMessages.push(c.text.trim());
             }
           }
@@ -96,7 +123,18 @@ export function extractUserMessagesFromLog(filePath: string): { first: string | 
 }
 
 export async function generateLayerAHandoff(options: HandoffOptions = {}): Promise<HandoffResult> {
-  const projectPath = options.projectPath || process.cwd();
+  let session = options.session;
+  if (!session && options.db) {
+    const recent = options.db.getRecentSessions(1);
+    if (recent.length > 0) session = recent[0];
+  }
+
+  const projectPath = options.projectPath || session?.project_path || process.cwd();
+
+  let sessionLogPath = options.sessionLogPath;
+  if (!sessionLogPath && options.db && session?.id) {
+    sessionLogPath = options.db.getLatestFileOffset(session.id)?.file_path;
+  }
 
   // 1. Git Facts
   const branch = runGit('git rev-parse --abbrev-ref HEAD', projectPath) || 'unknown';
@@ -121,8 +159,8 @@ export async function generateLayerAHandoff(options: HandoffOptions = {}): Promi
   let goal = options.firstUserMessage;
   let latestTask = options.latestUserMessage;
 
-  if (!goal && options.sessionLogPath) {
-    const extracted = extractUserMessagesFromLog(options.sessionLogPath);
+  if (!goal && sessionLogPath) {
+    const extracted = extractUserMessagesFromLog(sessionLogPath);
     goal = extracted.first || undefined;
     latestTask = extracted.latest || undefined;
   }
