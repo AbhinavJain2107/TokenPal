@@ -20,6 +20,7 @@ let mascotWindow: Electron.BrowserWindow | null = null;
 let panelWindow: Electron.BrowserWindow | null = null;
 let customizeWindow: Electron.BrowserWindow | null = null;
 let tray: Electron.Tray | null = null;
+let currentContextMenu: Electron.Menu | null = null;
 
 let isLowPower = false;
 let isRoaming = false;
@@ -325,6 +326,13 @@ function updateTray(): void {
     tray.on('click', () => {
       togglePanelVisibility();
     });
+    if (process.platform === 'darwin') {
+      tray.on('right-click', () => {
+        if (tray && currentContextMenu) {
+          tray.popUpContextMenu(currentContextMenu);
+        }
+      });
+    }
   }
 
   const contextMenu = Menu.buildFromTemplate([
@@ -404,7 +412,10 @@ function updateTray(): void {
     }
   ]);
 
-  tray.setContextMenu(contextMenu);
+  currentContextMenu = contextMenu;
+  if (process.platform !== 'darwin') {
+    tray.setContextMenu(contextMenu);
+  }
 }
 
 function setLowPowerMode(enabled: boolean): void {
@@ -913,6 +924,9 @@ if (parentPidStr) {
 // 9. APP INITIALIZATION
 // ---------------------------------------------------------------------------
 app.whenReady().then(() => {
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.hide();
+  }
   createMascotWindow();
   createPanelWindow();
   updateTray();
