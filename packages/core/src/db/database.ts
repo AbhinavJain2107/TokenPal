@@ -79,7 +79,19 @@ export class TokenPalDatabase {
     return stmt.all(limit) as Session[];
   }
 
+  public ensureSession(sessionId: string, agent: string = 'codex'): void {
+    if (!sessionId) return;
+    const stmt = this.db.prepare(`
+      INSERT OR IGNORE INTO sessions (id, agent, started_at, last_event_at, status)
+      VALUES (?, ?, datetime('now'), datetime('now'), 'active')
+    `);
+    stmt.run(sessionId, agent);
+  }
+
   public insertTurn(turn: Turn): void {
+    if (turn.session_id) {
+      this.ensureSession(turn.session_id);
+    }
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO turns (
         id, session_id, ts, input_tokens, output_tokens, cached_tokens, reasoning_tokens, model, effort, tool_output_bytes
@@ -102,6 +114,9 @@ export class TokenPalDatabase {
   }
 
   public insertToolEvent(event: ToolEvent): void {
+    if (event.session_id) {
+      this.ensureSession(event.session_id);
+    }
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO tool_events (
         id, session_id, ts, name, exit_code, output_bytes, command_hash
@@ -138,6 +153,9 @@ export class TokenPalDatabase {
   }
 
   public insertHandoff(handoff: Handoff): void {
+    if (handoff.session_id) {
+      this.ensureSession(handoff.session_id);
+    }
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO handoffs (id, session_id, ts, path)
       VALUES (@id, @session_id, @ts, @path)

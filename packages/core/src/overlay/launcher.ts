@@ -47,9 +47,13 @@ export class OverlayLauncher {
     this.latestPayload = payload;
     if (!this.isRunning()) {
       this.spawnOverlay(payload);
-    } else if (this.child?.stdin) {
-      const msg = JSON.stringify({ type: 'SHOW_ALERT', payload }) + '\n';
-      this.child.stdin.write(msg);
+    } else if (this.child?.stdin && this.child.stdin.writable) {
+      try {
+        const msg = JSON.stringify({ type: 'SHOW_ALERT', payload }) + '\n';
+        this.child.stdin.write(msg, () => {});
+      } catch {
+        // ignore write error
+      }
     }
   }
 
@@ -57,9 +61,13 @@ export class OverlayLauncher {
     this.latestPayload = payload;
     if (!this.isRunning()) {
       this.spawnOverlay(payload);
-    } else if (this.child?.stdin) {
-      const msg = JSON.stringify({ type: 'METER_UPDATE', payload }) + '\n';
-      this.child.stdin.write(msg);
+    } else if (this.child?.stdin && this.child.stdin.writable) {
+      try {
+        const msg = JSON.stringify({ type: 'METER_UPDATE', payload }) + '\n';
+        this.child.stdin.write(msg, () => {});
+      } catch {
+        // ignore write error
+      }
     }
   }
 
@@ -147,6 +155,14 @@ export class OverlayLauncher {
           TOKENPAL_PARENT_PID: process.pid.toString(),
           TOKENPAL_OVERLAY_INITIAL: initialPayload ? JSON.stringify(initialPayload) : ''
         }
+      });
+
+      this.child.on('error', () => {
+        this.child = null;
+      });
+
+      this.child.stdin?.on('error', () => {
+        // Prevent unhandled EPIPE if overlay closes
       });
 
       this.child.stdout?.setEncoding('utf-8');
