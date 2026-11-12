@@ -474,8 +474,21 @@
       ipcRenderer.send('overlay:open-customize');
     });
 
+    let handoffResetTimer = null;
     btnHandoff.addEventListener('click', () => {
       ipcRenderer.send('action:copy-handoff');
+      btnHandoff.textContent = '✓ Copied!';
+      btnHandoff.style.background = '#059669';
+      btnHandoff.style.borderColor = '#10b981';
+      btnHandoff.style.color = '#ffffff';
+
+      if (handoffResetTimer) clearTimeout(handoffResetTimer);
+      handoffResetTimer = setTimeout(() => {
+        btnHandoff.textContent = 'Copy Handoff';
+        btnHandoff.style.background = '';
+        btnHandoff.style.borderColor = '';
+        btnHandoff.style.color = '';
+      }, 2000);
     });
 
     btnDetails.addEventListener('click', () => {
