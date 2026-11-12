@@ -15,10 +15,10 @@ import { OverlayAlertPayload } from './types.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-let mascotWindow: BrowserWindow | null = null;
-let panelWindow: BrowserWindow | null = null;
-let customizeWindow: BrowserWindow | null = null;
-let tray: Tray | null = null;
+let mascotWindow: Electron.BrowserWindow | null = null;
+let panelWindow: Electron.BrowserWindow | null = null;
+let customizeWindow: Electron.BrowserWindow | null = null;
+let tray: Electron.Tray | null = null;
 
 let isLowPower = false;
 let isRoaming = false;

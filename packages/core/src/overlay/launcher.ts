@@ -148,10 +148,13 @@ export class OverlayLauncher {
     const spawnArgs = isDirectBin ? [entryPath] : ['--yes', 'electron', entryPath];
 
     try {
+      const childEnv = { ...process.env };
+      delete childEnv.ELECTRON_RUN_AS_NODE;
+
       this.child = child_process.spawn(spawnCmd, spawnArgs, {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: {
-          ...process.env,
+          ...childEnv,
           TOKENPAL_PARENT_PID: process.pid.toString(),
           TOKENPAL_OVERLAY_INITIAL: initialPayload ? JSON.stringify(initialPayload) : ''
         }
