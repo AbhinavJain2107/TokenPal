@@ -62,9 +62,31 @@ async function runWatcherForeground(options: {
   const customDirs = options.dir ? [path.resolve(options.dir)] : [];
   const watcher = new SessionWatcher({ db, customDirs, pollIntervalMs: 1000 });
   const alertManager = new MeterAlertManager();
+
+  // Read latest real meter status from DB for initial overlay display
+  const initialSnapshot = db.getLatestMeterSnapshot();
+  const initialStatus = initialSnapshot ? watcher.getMeterReader().getMeterStatus() : null;
+  const initialPayload: OverlayAlertPayload | undefined = initialStatus ? {
+    state: initialStatus.isStale ? 'yellow' : 'green',
+    meter: {
+      usedPercent: initialStatus.usedPercent,
+      timeToResetFormatted: initialStatus.timeToResetFormatted,
+      resetsAtLocal: initialStatus.resetsAtLocal,
+      asOfLocal: initialStatus.asOfLocal,
+      isStale: initialStatus.isStale,
+      staleReason: initialStatus.staleReason,
+      planType: initialStatus.planType,
+      percentBar: initialStatus.percentBar,
+      earlyResetsCount: initialStatus.earlyResetsCount,
+      earlyResetsNote: initialStatus.earlyResetsNote,
+      projectedExhaustionText: initialStatus.projectedExhaustionText,
+      modelBadgeText: initialStatus.modelBadgeText
+    }
+  } : undefined;
+
   const launcher = options.ui !== false ? new OverlayLauncher() : null;
   if (launcher) {
-    launcher.start();
+    launcher.start(initialPayload);
   }
 
   // Local control server for daemon IPC commands (e.g. tokenpal test-alert)
@@ -88,12 +110,20 @@ async function runWatcherForeground(options: {
         try {
           const req = JSON.parse(line.trim());
           if (req.command === 'test-alert') {
+            const currentStatus = watcher.getMeterReader().getMeterStatus();
             const testAlert: OverlayAlertPayload = {
               state: 'yellow',
               rule: 'test_alert',
               reason: 'TEST ALERT: Verification from running TokenPal daemon',
               advice: 'This is a test alert verifying desktop overlay activation via the background daemon control channel.',
-              meter: {
+              meter: currentStatus ? {
+                usedPercent: currentStatus.usedPercent,
+                percentBar: currentStatus.percentBar,
+                resetsAtLocal: currentStatus.resetsAtLocal,
+                timeToResetFormatted: currentStatus.timeToResetFormatted,
+                planType: currentStatus.planType,
+                projectedExhaustionText: currentStatus.projectedExhaustionText || 'Quota healthy'
+              } : {
                 usedPercent: 42,
                 percentBar: '████░░░░░░',
                 resetsAtLocal: 'Sunday, 12:00 PM',
@@ -132,31 +162,12 @@ async function runWatcherForeground(options: {
   console.log(' Cooldown             : Once per hour per alert type');
   console.log('='.repeat(75));
 
-  // Show initial meter snapshot if present in database
-  const initialSnapshot = db.getLatestMeterSnapshot();
-  if (initialSnapshot) {
-    const initialStatus = watcher.getMeterReader().getMeterStatus();
-    if (initialStatus) {
-      if (launcher) {
-        launcher.updateMeter({
-          state: initialStatus.isStale ? 'yellow' : 'green',
-          meter: {
-            usedPercent: initialStatus.usedPercent,
-            timeToResetFormatted: initialStatus.timeToResetFormatted,
-            resetsAtLocal: initialStatus.resetsAtLocal,
-            asOfLocal: initialStatus.asOfLocal,
-            isStale: initialStatus.isStale,
-            staleReason: initialStatus.staleReason,
-            planType: initialStatus.planType,
-            percentBar: initialStatus.percentBar,
-            earlyResetsCount: initialStatus.earlyResetsCount,
-            earlyResetsNote: initialStatus.earlyResetsNote,
-            projectedExhaustionText: initialStatus.projectedExhaustionText,
-            modelBadgeText: initialStatus.modelBadgeText
-          }
-        });
-      }
-      const resetPart = initialStatus.resetsAtLocal ? ` (${initialStatus.resetsAtLocal})` : '';
+  // Show initial meter snapshot in console if present in database
+  if (initialSnapshot && initialStatus) {
+    if (launcher) {
+      launcher.updateMeter(initialPayload!);
+    }
+    const resetPart = initialStatus.resetsAtLocal ? ` (${initialStatus.resetsAtLocal})` : '';
       const asOfPart = initialStatus.asOfLocal ? ` | as of ${initialStatus.asOfLocal}` : '';
       console.log(`\n[METER] ${initialStatus.percentBar} | Resets in ${initialStatus.timeToResetFormatted}${resetPart}${asOfPart} | Plan: ${initialStatus.planType}`);
       if (initialStatus.isStale && initialStatus.staleReason) {
@@ -172,7 +183,6 @@ async function runWatcherForeground(options: {
         console.log(`        💡 ${initialStatus.modelBadgeText}`);
       }
       console.log('');
-    }
   }
 
   console.log('Listening for session turns in real time...\n');
