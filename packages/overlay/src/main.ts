@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, powerMonitor } from 'electron';
 import * as path from 'node:path';
+import * as fs from 'node:fs';
 import * as child_process from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
@@ -40,14 +41,34 @@ let overlaySettings: OverlaySettingsConfig = {
 isRoaming = Boolean(overlaySettings.roam);
 isPanelPinned = Boolean(overlaySettings.isPinned);
 
-// Tray icon (16x16 geometric circle)
+// Tray icon (16x16 / 32x32 template icon)
 function createTrayIcon(): Electron.NativeImage {
-  return nativeImage.createFromBuffer(
+  const possiblePaths = [
+    path.join(__dirname, 'assets', 'trayTemplate.png'),
+    path.join(__dirname, '../assets', 'trayTemplate.png'),
+    path.resolve(process.cwd(), 'packages/overlay/assets/trayTemplate.png'),
+    path.resolve(process.cwd(), 'packages/overlay/dist/assets/trayTemplate.png')
+  ];
+
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      const img = nativeImage.createFromPath(p);
+      if (!img.isEmpty()) {
+        img.setTemplateImage(true);
+        return img;
+      }
+    }
+  }
+
+  // Fallback to embedded valid base64 template image
+  const fallback = nativeImage.createFromBuffer(
     Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAFRJREFUOE9jZKAQMOLQ/x9NH4qB0Qy4yYBEh7EaQLoB+A1gGfEfm0vweQffoYw4DcCGG+E0wGAAhW4w4g2Q3QBMGv78/fvn25evXzYw4DAAnwEYAACC3T4sH/698QAAAABJRU5ErkJggg==',
+      'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAP0lEQVR4nGNgoBL4D8Vkqf+PhonVDFePLkAqpq4BuJyJT566Bgx8GBCKSpJcQIxmnImJaOcTYwOxLiTaoEEGAHmcm2WZ140yAAAAAElFTkSuQmCC',
       'base64'
     )
   );
+  fallback.setTemplateImage(true);
+  return fallback;
 }
 
 function getActiveSkin(): SkinDefinition {
@@ -268,6 +289,9 @@ function updateTray(): void {
   if (!tray) {
     tray = new Tray(createTrayIcon());
     tray.setToolTip('TokenPal Proactive Guardian');
+    tray.on('click', () => {
+      togglePanelVisibility();
+    });
   }
 
   const contextMenu = Menu.buildFromTemplate([

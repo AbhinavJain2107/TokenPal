@@ -31,10 +31,11 @@
   },
   "files": [
     "dist",
-    "skins"
+    "skins",
+    "assets"
   ],
   "scripts": {
-    "build": "tsc && cp src/*.html dist/ && cp -r skins dist/",
+    "build": "tsc && cp src/*.html dist/ && cp -r skins dist/ && cp -r assets dist/",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
