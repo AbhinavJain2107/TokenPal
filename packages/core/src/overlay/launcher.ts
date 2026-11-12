@@ -144,7 +144,10 @@ export class OverlayLauncher {
 
     const electronBin = this.findElectronPath(entryPath);
     const isDirectBin = fs.existsSync(electronBin);
-    const spawnCmd = isDirectBin ? electronBin : 'npx';
+    const isWin = process.platform === 'win32';
+    const spawnCmd = isDirectBin
+      ? electronBin
+      : (isWin ? 'npx.cmd' : 'npx');
     const spawnArgs = isDirectBin ? [entryPath] : ['--yes', 'electron', entryPath];
 
     try {
@@ -153,6 +156,7 @@ export class OverlayLauncher {
 
       this.child = child_process.spawn(spawnCmd, spawnArgs, {
         stdio: ['pipe', 'pipe', 'pipe'],
+        shell: isWin,
         env: {
           ...childEnv,
           TOKENPAL_PARENT_PID: process.pid.toString(),

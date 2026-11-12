@@ -106,6 +106,8 @@ function createMascotWindow(): void {
   if (process.platform === 'darwin') {
     mascotWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     mascotWindow.setAlwaysOnTop(true, 'screen-saver');
+  } else {
+    mascotWindow.setAlwaysOnTop(true);
   }
 
   const mascotHtmlPath = path.join(__dirname, 'mascot.html');
@@ -169,6 +171,8 @@ function createPanelWindow(): void {
   if (process.platform === 'darwin') {
     panelWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     panelWindow.setAlwaysOnTop(true, 'screen-saver');
+  } else {
+    panelWindow.setAlwaysOnTop(true);
   }
 
   const panelHtmlPath = path.join(__dirname, 'panel.html');
@@ -615,11 +619,6 @@ setInterval(stepRoaming, 2000);
 // 7. FRONTMOST APPLICATION & VISIBILITY MODES
 // ---------------------------------------------------------------------------
 function checkFrontmostApp(): void {
-  if (process.platform !== 'darwin') {
-    applyAppVisibility(true);
-    return;
-  }
-
   const mode = overlaySettings.visibilityMode || 'coding_apps';
 
   // 1. "Always" visible mode
@@ -640,42 +639,85 @@ function checkFrontmostApp(): void {
     return;
   }
 
-  child_process.exec(
-    'lsappinfo info -only name $(lsappinfo front)',
-    { timeout: 1000 },
-    (error, stdout) => {
-      if (error || !stdout) {
-        if (!frontmostAppHintShown) {
-          frontmostAppHintShown = true;
-          console.log('[TokenPal] Frontmost application detection falling back to visible.');
-        }
-        applyAppVisibility(true);
-        return;
-      }
+  // If TokenPal itself is active or open, NEVER hide!
+  if (
+    Boolean(panelWindow && panelWindow.isVisible()) ||
+    Boolean(customizeWindow && !customizeWindow.isDestroyed())
+  ) {
+    applyAppVisibility(true);
+    return;
+  }
 
-      const match = stdout.match(/"([^"]+)"/);
-      const frontApp = match ? match[1].trim() : '';
-      const lower = frontApp.toLowerCase();
+  const evaluateFrontApp = (frontApp: string) => {
+    const lower = frontApp.toLowerCase();
 
-      // If TokenPal itself is active or open, NEVER hide!
-      if (
-        lower.includes('electron') ||
-        lower.includes('tokenpal') ||
-        Boolean(panelWindow && panelWindow.isVisible()) ||
-        Boolean(customizeWindow && !customizeWindow.isDestroyed())
-      ) {
-        applyAppVisibility(true);
-        return;
-      }
-
-      const allowedApps = overlaySettings.codingApps || DEFAULT_OVERLAY_SETTINGS.codingApps;
-      const isAllowed = allowedApps.some(
-        (app) => lower === app.toLowerCase() || lower.includes(app.toLowerCase()) || app.toLowerCase().includes(lower)
-      );
-
-      applyAppVisibility(isAllowed);
+    // If TokenPal itself is active or open, NEVER hide!
+    if (
+      lower.includes('electron') ||
+      lower.includes('tokenpal') ||
+      Boolean(panelWindow && panelWindow.isVisible()) ||
+      Boolean(customizeWindow && !customizeWindow.isDestroyed())
+    ) {
+      applyAppVisibility(true);
+      return;
     }
-  );
+
+    const allowedApps = overlaySettings.codingApps || DEFAULT_OVERLAY_SETTINGS.codingApps;
+    const isAllowed = allowedApps.some(
+      (app) => lower === app.toLowerCase() || lower.includes(app.toLowerCase()) || app.toLowerCase().includes(lower)
+    );
+
+    applyAppVisibility(isAllowed);
+  };
+
+  if (process.platform === 'darwin') {
+    child_process.exec(
+      'lsappinfo info -only name $(lsappinfo front)',
+      { timeout: 1000 },
+      (error, stdout) => {
+        if (error || !stdout) {
+          if (!frontmostAppHintShown) {
+            frontmostAppHintShown = true;
+            console.log('[TokenPal] Frontmost application detection falling back to visible.');
+          }
+          applyAppVisibility(true);
+          return;
+        }
+
+        const match = stdout.match(/"([^"]+)"/);
+        const frontApp = match ? match[1].trim() : '';
+        evaluateFrontApp(frontApp);
+      }
+    );
+  } else if (process.platform === 'linux') {
+    // Linux X11 active window detection via xdotool or xprop
+    child_process.exec(
+      'xdotool getwindowfocus getwindowname 2>/dev/null || xprop -id $(xdotool getactivewindow 2>/dev/null) WM_CLASS 2>/dev/null',
+      { timeout: 1000 },
+      (error, stdout) => {
+        if (error || !stdout) {
+          applyAppVisibility(true);
+          return;
+        }
+        evaluateFrontApp(stdout.trim());
+      }
+    );
+  } else if (process.platform === 'win32') {
+    // Windows foreground process query via PowerShell
+    child_process.exec(
+      'powershell -NoProfile -NonInteractive -Command "(Get-Process | Where-Object { $_.MainWindowHandle -eq (Add-Type -MemberDefinition \'[DllImport(\\\"user32.dll\\\")] public static extern IntPtr GetForegroundWindow();\' -Name \'W\' -Namespace \'W\' -PassThru)::GetForegroundWindow() }).ProcessName"',
+      { timeout: 1000 },
+      (error, stdout) => {
+        if (error || !stdout) {
+          applyAppVisibility(true);
+          return;
+        }
+        evaluateFrontApp(stdout.trim());
+      }
+    );
+  } else {
+    applyAppVisibility(true);
+  }
 }
 
 function applyAppVisibility(shouldBeVisible: boolean): void {

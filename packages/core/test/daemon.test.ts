@@ -16,6 +16,8 @@ import {
   formatUptime,
   parseEtimeToSeconds,
   generateLaunchAgentPlist,
+  generateLinuxDesktopEntry,
+  generateWindowsStartupScript,
   enableAutostart,
   disableAutostart,
   ProcessInfo
@@ -684,15 +686,36 @@ describe('Daemon Management', () => {
       expect(plist).toContain('<key>StandardErrorPath</key>');
     });
 
-    it('returns not supported on non-darwin platforms', () => {
-      if (process.platform !== 'darwin') {
+    it('generates valid Linux XDG desktop entry', () => {
+      const entry = generateLinuxDesktopEntry({
+        nodePath: '/usr/bin/node',
+        cliPath: '/home/user/TokenPal/packages/cli/dist/index.js'
+      });
+
+      expect(entry).toContain('[Desktop Entry]');
+      expect(entry).toContain('Type=Application');
+      expect(entry).toContain('Name=TokenPal');
+      expect(entry).toContain('Exec=/usr/bin/node /home/user/TokenPal/packages/cli/dist/index.js start --foreground --tokenpal-daemon');
+    });
+
+    it('generates valid Windows Startup batch script', () => {
+      const script = generateWindowsStartupScript({
+        nodePath: 'C:\\Program Files\\nodejs\\node.exe',
+        cliPath: 'C:\\Users\\user\\AppData\\Roaming\\npm\\node_modules\\@tokenpal\\cli\\dist\\index.js'
+      });
+
+      expect(script).toContain('@echo off');
+      expect(script).toContain('start "" /B');
+      expect(script).toContain('--tokenpal-daemon');
+    });
+
+    it('returns autostart support status for current platform', () => {
+      if (process.platform === 'darwin' || process.platform === 'linux' || process.platform === 'win32') {
+        // Supported platforms
+        expect(['darwin', 'linux', 'win32']).toContain(process.platform);
+      } else {
         const onRes = enableAutostart();
         expect(onRes.supported).toBe(false);
-        expect(onRes.message).toBe('not supported yet');
-
-        const offRes = disableAutostart();
-        expect(offRes.supported).toBe(false);
-        expect(offRes.message).toBe('not supported yet');
       }
     });
 

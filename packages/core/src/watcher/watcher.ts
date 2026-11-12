@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { AgentAdapter } from '../adapters/interface.js';
 import { CodexAdapter } from '../adapters/codex.js';
+import { ClaudeAdapter } from '../adapters/claude.js';
 import { TokenPalDatabase } from '../db/database.js';
 import { TurnEventPayload, Session } from '../types.js';
 import { MeterReader } from '../meter/meter-reader.js';
@@ -30,7 +31,7 @@ export class SessionWatcher extends EventEmitter {
   constructor(options: WatcherOptions) {
     super();
     this.db = options.db;
-    this.adapters = options.adapters || [new CodexAdapter()];
+    this.adapters = options.adapters || [new CodexAdapter(), new ClaudeAdapter()];
     this.customDirs = options.customDirs || [];
     this.pollIntervalMs = options.pollIntervalMs || 1000;
     this.meterReader = new MeterReader(this.db, {

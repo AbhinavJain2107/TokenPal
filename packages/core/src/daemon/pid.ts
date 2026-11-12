@@ -164,7 +164,28 @@ export function getDefaultProcessChecker(): ProcessChecker {
       // EPERM means process exists but we don't own it
     }
 
-    // 2. Inspect command line and uptime via ps
+    // Windows inspection via PowerShell CIM
+    if (process.platform === 'win32') {
+      try {
+        const output = child_process.execSync(
+          `powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process -Filter \\"ProcessId = ${pid}\\" | Select-Object -ExpandProperty CommandLine"`,
+          {
+            encoding: 'utf-8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+            timeout: 2000
+          }
+        ).trim();
+
+        return {
+          running: true,
+          command: output || undefined
+        };
+      } catch {
+        return { running: true };
+      }
+    }
+
+    // 2. Inspect command line and uptime via ps (macOS / Linux)
     try {
       const output = child_process.execSync(`ps -p ${pid} -o etime=,command=`, {
         encoding: 'utf-8',
@@ -203,6 +224,14 @@ export function getDefaultProcessChecker(): ProcessChecker {
  */
 export function getDefaultProcessKiller(): ProcessKiller {
   return (pid: number, signal: NodeJS.Signals): void => {
+    if (process.platform === 'win32' && (signal === 'SIGKILL' || signal === 'SIGTERM')) {
+      try {
+        child_process.execSync(`taskkill /F /T /PID ${pid}`, { stdio: ['ignore', 'ignore', 'ignore'] });
+        return;
+      } catch {
+        // fallback to process.kill
+      }
+    }
     try {
       process.kill(pid, signal);
     } catch {
@@ -216,6 +245,33 @@ export function getDefaultProcessKiller(): ProcessKiller {
  */
 export function getChildProcessIds(parentPid: number): number[] {
   if (parentPid <= 0) return [];
+
+  if (process.platform === 'win32') {
+    try {
+      const output = child_process.execSync(
+        `powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process -Filter \\"ParentProcessId = ${parentPid}\\" | Select-Object -ExpandProperty ProcessId"`,
+        {
+          encoding: 'utf-8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          timeout: 2000
+        }
+      );
+      const pids = output
+        .trim()
+        .split(/\s+/)
+        .map((s) => parseInt(s, 10))
+        .filter((n) => !isNaN(n) && n > 0);
+
+      const allPids = [...pids];
+      for (const p of pids) {
+        allPids.push(...getChildProcessIds(p));
+      }
+      return allPids;
+    } catch {
+      return [];
+    }
+  }
+
   try {
     const output = child_process.execSync(`pgrep -P ${parentPid}`, {
       encoding: 'utf-8',
@@ -243,8 +299,42 @@ export function getChildProcessIds(parentPid: number): number[] {
  */
 export function findOverlayProcesses(): ProcessInfo[] {
   if (process.platform === 'win32') {
-    return [];
+    try {
+      const output = child_process.execSync(
+        `powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*overlay*' } | Select-Object ProcessId,CommandLine | ConvertTo-Json"`,
+        {
+          encoding: 'utf-8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          timeout: 3000
+        }
+      );
+      const trimmed = output.trim();
+      if (!trimmed) return [];
+      const parsed = JSON.parse(trimmed);
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+      const matched: ProcessInfo[] = [];
+      for (const item of items) {
+        const pid = item.ProcessId;
+        const command = item.CommandLine || '';
+        if (pid === process.pid) continue;
+        if (
+          command.includes('packages/overlay/dist/main.js') ||
+          command.includes('overlay/dist/main.js') ||
+          command.includes('packages/overlay/src/main.ts')
+        ) {
+          matched.push({
+            running: true,
+            command,
+            pid
+          });
+        }
+      }
+      return matched;
+    } catch {
+      return [];
+    }
   }
+
   try {
     const output = child_process.execSync('ps -eo pid,args', {
       encoding: 'utf-8',
