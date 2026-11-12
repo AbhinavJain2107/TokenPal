@@ -254,13 +254,30 @@ function togglePanelVisibility(force?: boolean): void {
 // ---------------------------------------------------------------------------
 function openCustomizeWindow(): void {
   if (customizeWindow && !customizeWindow.isDestroyed()) {
+    customizeWindow.show();
     customizeWindow.focus();
+    customizeWindow.moveTop();
     return;
   }
 
+  // Dismiss status panel card so it doesn't obstruct the Mascot Studio window
+  togglePanelVisibility(false);
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const workArea = primaryDisplay.workArea;
+  const winWidth = 460;
+  const winHeight = 640;
+
+  // Center prominently on the primary screen
+  const posX = Math.round(workArea.x + (workArea.width - winWidth) / 2);
+  const posY = Math.round(workArea.y + (workArea.height - winHeight) / 2);
+
   customizeWindow = new BrowserWindow({
-    width: 460,
-    height: 640,
+    width: winWidth,
+    height: winHeight,
+    x: posX,
+    y: posY,
+    center: true,
     minWidth: 420,
     minHeight: 520,
     title: 'TokenPal Mascot Studio',
@@ -268,6 +285,8 @@ function openCustomizeWindow(): void {
     frame: true,
     hasShadow: true,
     resizable: true,
+    alwaysOnTop: true, // Initially on top so macOS brings it in front of all windows
+    show: false,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
@@ -276,6 +295,20 @@ function openCustomizeWindow(): void {
 
   const customizeHtmlPath = path.join(__dirname, 'customize.html');
   customizeWindow.loadFile(customizeHtmlPath);
+
+  customizeWindow.once('ready-to-show', () => {
+    if (customizeWindow && !customizeWindow.isDestroyed()) {
+      customizeWindow.show();
+      customizeWindow.focus();
+      customizeWindow.moveTop();
+      // Drop alwaysOnTop after bringing to front so window behaves normally
+      setTimeout(() => {
+        if (customizeWindow && !customizeWindow.isDestroyed()) {
+          customizeWindow.setAlwaysOnTop(false);
+        }
+      }, 500);
+    }
+  });
 
   customizeWindow.on('closed', () => {
     customizeWindow = null;
