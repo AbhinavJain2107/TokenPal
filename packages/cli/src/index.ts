@@ -79,8 +79,13 @@ async function runWatcherForeground(options: {
     }
   }
 
+  const latestTurn = db.getLatestTurn();
   const initialPayload: OverlayAlertPayload | undefined = initialMeterStatus ? {
     state: initialMeterStatus.isStale ? 'yellow' : 'green',
+    contextTokens: latestTurn ? latestTurn.input_tokens : undefined,
+    cachedTokens: latestTurn ? latestTurn.cached_tokens : undefined,
+    turnIndex: latestTurn && latestTurn.session_id ? db.getTurnCount(latestTurn.session_id) : undefined,
+    model: latestTurn?.model || undefined,
     meter: {
       usedPercent: initialMeterStatus.usedPercent,
       timeToResetFormatted: initialMeterStatus.timeToResetFormatted,
@@ -237,8 +242,13 @@ async function runWatcherForeground(options: {
         launcher.showAlert(alert);
       }
     } else if (launcher) {
+      const currentTurn = db.getLatestTurn();
       launcher.updateMeter({
         state: status.isStale ? 'yellow' : 'green',
+        contextTokens: currentTurn ? currentTurn.input_tokens : undefined,
+        cachedTokens: currentTurn ? currentTurn.cached_tokens : undefined,
+        turnIndex: currentTurn && currentTurn.session_id ? db.getTurnCount(currentTurn.session_id) : undefined,
+        model: currentTurn?.model || undefined,
         meter: {
           usedPercent: status.usedPercent,
           timeToResetFormatted: status.timeToResetFormatted,
@@ -346,6 +356,31 @@ async function runWatcherForeground(options: {
       `Cached: ${cachedTok.padStart(6)} | ` +
       `Out: ${outputTok.padStart(5)}${meterPart}`
     );
+
+    if (launcher) {
+      const currentMeter = meterStatus || watcher.getMeterReader().getMeterStatus(session.model);
+      launcher.updateMeter({
+        state: currentMeter?.isStale ? 'yellow' : 'green',
+        contextTokens: turn.input_tokens,
+        cachedTokens: turn.cached_tokens,
+        turnIndex,
+        model: turn.model || session.model || undefined,
+        meter: currentMeter ? {
+          usedPercent: currentMeter.usedPercent,
+          timeToResetFormatted: currentMeter.timeToResetFormatted,
+          resetsAtLocal: currentMeter.resetsAtLocal,
+          asOfLocal: currentMeter.asOfLocal,
+          isStale: currentMeter.isStale,
+          staleReason: currentMeter.staleReason,
+          planType: currentMeter.planType,
+          percentBar: currentMeter.percentBar,
+          earlyResetsCount: currentMeter.earlyResetsCount,
+          earlyResetsNote: currentMeter.earlyResetsNote,
+          projectedExhaustionText: currentMeter.projectedExhaustionText,
+          modelBadgeText: currentMeter.modelBadgeText
+        } : undefined
+      });
+    }
 
     if (options.legacyRules) {
       const turns = db.getTurns(session.id);

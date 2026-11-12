@@ -113,6 +113,11 @@ export class TokenPalDatabase {
     return result ? result.count : 0;
   }
 
+  public getLatestTurn(): Turn | null {
+    const stmt = this.db.prepare('SELECT * FROM turns ORDER BY ts DESC LIMIT 1');
+    return (stmt.get() as Turn) || null;
+  }
+
   public insertToolEvent(event: ToolEvent): void {
     if (event.session_id) {
       this.ensureSession(event.session_id);

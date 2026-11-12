@@ -22,6 +22,7 @@ export interface OverlayAlertPayload {
   reason?: string;
   advice?: string;
   contextTokens?: number;
+  cachedTokens?: number;
   turnIndex?: number;
   turnCount?: number;
   model?: string;

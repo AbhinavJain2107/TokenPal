@@ -318,6 +318,17 @@
       <div class="bar-container">
         <div class="bar-fill" id="barFill"></div>
       </div>
+      <!-- Context & Activity Row -->
+      <div class="context-subrow" id="contextSubrow" style="display: none; align-items: center; justify-content: space-between; font-size: 11px; color: #a1a1aa; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.05); margin-top: 2px;">
+        <div style="display: flex; align-items: center; gap: 5px;">
+          <span style="color: #71717a; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Context:</span>
+          <span id="heroContextVal" style="color: #f4f4f5; font-weight: 600;">-</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 4px; font-size: 10px;">
+          <span id="heroTurnVal" style="color: #a1a1aa;">Turn -</span>
+          <span id="heroCacheVal" style="color: #34d399; font-weight: 500;"></span>
+        </div>
+      </div>
     </div>
 
     <!-- Plain-Language Message Line (Never internal rule name) -->
@@ -382,6 +393,10 @@
     const btnHandoff = document.getElementById('btnHandoff');
     const detailsPanel = document.getElementById('detailsPanel');
     const asOfFooter = document.getElementById('asOfFooter');
+    const contextSubrow = document.getElementById('contextSubrow');
+    const heroContextVal = document.getElementById('heroContextVal');
+    const heroTurnVal = document.getElementById('heroTurnVal');
+    const heroCacheVal = document.getElementById('heroCacheVal');
 
     // Details elements
     const detRequestCost = document.getElementById('detRequestCost');
@@ -589,8 +604,33 @@
         detAdvice.style.display = 'none';
       }
 
-      if (payload.contextTokens) detContext.textContent = payload.contextTokens.toLocaleString();
-      if (payload.turnIndex) detTurn.textContent = payload.turnIndex;
+      if (typeof payload.contextTokens === 'number' && payload.contextTokens > 0) {
+        const tok = payload.contextTokens;
+        const formatted = tok >= 1000000 
+          ? (tok / 1000000).toFixed(1) + 'M' 
+          : tok >= 1000 
+            ? (tok / 1000).toFixed(1) + 'k' 
+            : tok.toString();
+        heroContextVal.textContent = `${formatted} tokens`;
+        detContext.textContent = tok.toLocaleString();
+        contextSubrow.style.display = 'flex';
+      } else {
+        contextSubrow.style.display = 'none';
+      }
+
+      if (payload.turnIndex) {
+        heroTurnVal.textContent = `Turn #${payload.turnIndex}`;
+        detTurn.textContent = payload.turnIndex;
+      } else {
+        heroTurnVal.textContent = '';
+      }
+
+      if (typeof payload.contextTokens === 'number' && typeof payload.cachedTokens === 'number' && payload.contextTokens > 0) {
+        const cachePct = Math.round((payload.cachedTokens / payload.contextTokens) * 100);
+        heroCacheVal.textContent = `· ${cachePct}% cached`;
+      } else {
+        heroCacheVal.textContent = '';
+      }
     }
 
     // IPC Listeners
