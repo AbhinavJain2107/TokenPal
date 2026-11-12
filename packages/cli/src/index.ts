@@ -63,24 +63,37 @@ async function runWatcherForeground(options: {
   const watcher = new SessionWatcher({ db, customDirs, pollIntervalMs: 1000 });
   const alertManager = new MeterAlertManager();
 
-  // Read latest real meter status from DB for initial overlay display
-  const initialSnapshot = db.getLatestMeterSnapshot();
-  const initialStatus = initialSnapshot ? watcher.getMeterReader().getMeterStatus() : null;
-  const initialPayload: OverlayAlertPayload | undefined = initialStatus ? {
-    state: initialStatus.isStale ? 'yellow' : 'green',
+  // Read latest real meter status from DB or session logs for initial overlay display
+  const initialMeterStatus = await readLatestMeterStatus({ db, sessionsDir: options.dir });
+  if (initialMeterStatus && initialMeterStatus.latestEventTs) {
+    const latestSnap = db.getLatestMeterSnapshot();
+    if (!latestSnap || latestSnap.ts !== initialMeterStatus.latestEventTs) {
+      db.insertMeterSnapshot({
+        session_id: null,
+        ts: initialMeterStatus.latestEventTs,
+        used_percent: initialMeterStatus.usedPercent,
+        window_minutes: 10080,
+        resets_at: initialMeterStatus.resetsAtEpochSec,
+        plan_type: initialMeterStatus.planType
+      });
+    }
+  }
+
+  const initialPayload: OverlayAlertPayload | undefined = initialMeterStatus ? {
+    state: initialMeterStatus.isStale ? 'yellow' : 'green',
     meter: {
-      usedPercent: initialStatus.usedPercent,
-      timeToResetFormatted: initialStatus.timeToResetFormatted,
-      resetsAtLocal: initialStatus.resetsAtLocal,
-      asOfLocal: initialStatus.asOfLocal,
-      isStale: initialStatus.isStale,
-      staleReason: initialStatus.staleReason,
-      planType: initialStatus.planType,
-      percentBar: initialStatus.percentBar,
-      earlyResetsCount: initialStatus.earlyResetsCount,
-      earlyResetsNote: initialStatus.earlyResetsNote,
-      projectedExhaustionText: initialStatus.projectedExhaustionText,
-      modelBadgeText: initialStatus.modelBadgeText
+      usedPercent: initialMeterStatus.usedPercent,
+      timeToResetFormatted: initialMeterStatus.timeToResetFormatted,
+      resetsAtLocal: initialMeterStatus.resetsAtLocal,
+      asOfLocal: initialMeterStatus.asOfLocal,
+      isStale: initialMeterStatus.isStale,
+      staleReason: initialMeterStatus.staleReason,
+      planType: initialMeterStatus.planType,
+      percentBar: initialMeterStatus.percentBar,
+      earlyResetsCount: initialMeterStatus.earlyResetsCount,
+      earlyResetsNote: initialMeterStatus.earlyResetsNote,
+      projectedExhaustionText: initialMeterStatus.projectedExhaustionText,
+      modelBadgeText: initialMeterStatus.modelBadgeText
     }
   } : undefined;
 
@@ -162,27 +175,24 @@ async function runWatcherForeground(options: {
   console.log(' Cooldown             : Once per hour per alert type');
   console.log('='.repeat(75));
 
-  // Show initial meter snapshot in console if present in database
-  if (initialSnapshot && initialStatus) {
-    if (launcher) {
-      launcher.updateMeter(initialPayload!);
+  // Show initial meter snapshot in console if present
+  if (initialMeterStatus) {
+    const resetPart = initialMeterStatus.resetsAtLocal ? ` (${initialMeterStatus.resetsAtLocal})` : '';
+    const asOfPart = initialMeterStatus.asOfLocal ? ` | as of ${initialMeterStatus.asOfLocal}` : '';
+    console.log(`\n[METER] ${initialMeterStatus.percentBar} | Resets in ${initialMeterStatus.timeToResetFormatted}${resetPart}${asOfPart} | Plan: ${initialMeterStatus.planType}`);
+    if (initialMeterStatus.isStale && initialMeterStatus.staleReason) {
+      console.log(`        ⚠️  STALE: ${initialMeterStatus.staleReason}`);
     }
-    const resetPart = initialStatus.resetsAtLocal ? ` (${initialStatus.resetsAtLocal})` : '';
-      const asOfPart = initialStatus.asOfLocal ? ` | as of ${initialStatus.asOfLocal}` : '';
-      console.log(`\n[METER] ${initialStatus.percentBar} | Resets in ${initialStatus.timeToResetFormatted}${resetPart}${asOfPart} | Plan: ${initialStatus.planType}`);
-      if (initialStatus.isStale && initialStatus.staleReason) {
-        console.log(`        ⚠️  STALE: ${initialStatus.staleReason}`);
-      }
-      if (initialStatus.earlyResetsNote) {
-        console.log(`        ⚠️  ${initialStatus.earlyResetsNote}`);
-      }
-      if (initialStatus.projectedExhaustionText) {
-        console.log(`        ⏳ ${initialStatus.projectedExhaustionText}`);
-      }
-      if (initialStatus.modelBadgeText) {
-        console.log(`        💡 ${initialStatus.modelBadgeText}`);
-      }
-      console.log('');
+    if (initialMeterStatus.earlyResetsNote) {
+      console.log(`        ⚠️  ${initialMeterStatus.earlyResetsNote}`);
+    }
+    if (initialMeterStatus.projectedExhaustionText) {
+      console.log(`        ⏳ ${initialMeterStatus.projectedExhaustionText}`);
+    }
+    if (initialMeterStatus.modelBadgeText) {
+      console.log(`        💡 ${initialMeterStatus.modelBadgeText}`);
+    }
+    console.log('');
   }
 
   console.log('Listening for session turns in real time...\n');

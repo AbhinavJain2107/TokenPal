@@ -26,9 +26,9 @@
       flex-direction: column;
       gap: 10px;
       padding: 14px 16px;
-      height: calc(100% - 16px);
-      max-height: 380px;
-      overflow: hidden;
+      height: 100%;
+      overflow-y: auto;
+      box-sizing: border-box;
     }
 
     /* Header Drag Handle */
@@ -465,10 +465,12 @@
 
     btnDetails.addEventListener('click', () => {
       const isVisible = detailsPanel.style.display === 'flex';
-      detailsPanel.style.display = isVisible ? 'none' : 'flex';
-      btnDetails.innerHTML = isVisible
-        ? '<span>Details</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>'
-        : '<span>Details</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 15-6-6-6 6"/></svg>';
+      const nowVisible = !isVisible;
+      detailsPanel.style.display = nowVisible ? 'flex' : 'none';
+      btnDetails.innerHTML = nowVisible
+        ? '<span>Details</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 15-6-6-6 6"/></svg>'
+        : '<span>Details</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>';
+      ipcRenderer.send('panel:resize', { expanded: nowVisible });
     });
 
     // Helpers to derive plain language titles (NEVER internal rule names)

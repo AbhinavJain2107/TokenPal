@@ -489,17 +489,29 @@ ipcMain.on('overlay:show-context-menu', () => {
 
 // Host button actions
 ipcMain.on('action:snooze', (_event, minutes) => {
+  isAlertActive = false;
   sendActionToHost('snooze', minutes);
   togglePanelVisibility(false);
+  checkFrontmostApp();
 });
 
 ipcMain.on('action:dismiss', () => {
+  isAlertActive = false;
   sendActionToHost('dismiss');
   togglePanelVisibility(false);
+  checkFrontmostApp();
 });
 
 ipcMain.on('action:copy-handoff', () => {
   sendActionToHost('copy-handoff');
+});
+
+ipcMain.on('panel:resize', (_event, { expanded }) => {
+  if (panelWindow && !panelWindow.isDestroyed()) {
+    const [w] = panelWindow.getSize();
+    panelWindow.setSize(w, expanded ? 520 : 360);
+    repositionPanel();
+  }
 });
 
 ipcMain.on('overlay:open-customize', () => {
@@ -517,6 +529,7 @@ ipcMain.on('customize:get-data', (event) => {
 
 ipcMain.on('customize:save', (_event, newSettings) => {
   overlaySettings = { ...overlaySettings, ...newSettings };
+  isRoaming = Boolean(overlaySettings.roam);
   settingsManager.save({ overlay: overlaySettings });
 
   const activeSkin = getActiveSkin();
@@ -527,6 +540,7 @@ ipcMain.on('customize:save', (_event, newSettings) => {
     });
   }
   updateTray();
+  checkFrontmostApp();
 });
 
 ipcMain.on('customize:close', () => {
@@ -538,16 +552,18 @@ ipcMain.on('customize:close', () => {
 // ---------------------------------------------------------------------------
 // 6. ROAMING IMPLEMENTATION
 // ---------------------------------------------------------------------------
+let roamDirection = -1;
+
 function stepRoaming(): void {
   if (
     !isRoaming ||
-    isLowPower ||
     isUserDraggingMascot ||
     isUserDraggingPanel ||
     !mascotWindow ||
     mascotWindow.isDestroyed() ||
     !mascotWindow.isVisible() ||
-    currentState !== 'green'
+    (panelWindow && panelWindow.isVisible()) ||
+    currentState === 'red'
   ) {
     return;
   }
@@ -555,12 +571,22 @@ function stepRoaming(): void {
   const [currentX, currentY] = mascotWindow.getPosition();
   const [winWidth, winHeight] = mascotWindow.getSize();
 
-  const stepX = (Math.random() - 0.5) * 8;
-  const stepY = (Math.random() - 0.5) * 4;
+  const currentDisplay = screen.getDisplayNearestPoint({ x: currentX, y: currentY });
+  const workArea = currentDisplay.workArea;
 
-  const newX = currentX + stepX;
-  const newY = currentY + stepY;
-  const clamped = clampWindowPosition(newX, newY, winWidth, winHeight);
+  const stepDistance = 16 + Math.floor(Math.random() * 8);
+  let nextX = currentX + (stepDistance * roamDirection);
+
+  // Turn around near edges
+  if (nextX <= workArea.x + 24) {
+    nextX = workArea.x + 24;
+    roamDirection = 1;
+  } else if (nextX + winWidth >= workArea.x + workArea.width - 24) {
+    nextX = workArea.x + workArea.width - winWidth - 24;
+    roamDirection = -1;
+  }
+
+  const clamped = clampWindowPosition(nextX, currentY, winWidth, winHeight);
 
   mascotWindow.setPosition(clamped.x, clamped.y);
   mascotWindow.webContents.send('overlay:walking', true);
@@ -568,7 +594,7 @@ function stepRoaming(): void {
     if (mascotWindow && !mascotWindow.isDestroyed()) {
       mascotWindow.webContents.send('overlay:walking', false);
     }
-  }, 400);
+  }, 600);
 }
 
 setInterval(stepRoaming, 3000);
@@ -634,9 +660,14 @@ function applyAppVisibility(shouldBeVisible: boolean): void {
 
   if (mascotWindow && !mascotWindow.isDestroyed()) {
     mascotWindow.webContents.send('overlay:fade', { visible: isCurrentlyVisible });
+    if (isCurrentlyVisible) {
+      mascotWindow.showInactive();
+    } else {
+      mascotWindow.hide();
+    }
   }
   if (panelWindow && !panelWindow.isDestroyed() && !isPanelPinned) {
-    if (!isCurrentlyVisible && !isPanelManuallyOpened) {
+    if (!isCurrentlyVisible) {
       panelWindow.hide();
     }
   }
@@ -683,11 +714,13 @@ process.stdin.on('data', (chunk) => {
 
         // An alert is active only for warning/red rules (or demo)
         const isRealAlert = Boolean(
-          payload.rule === 'projected_exhaustion' ||
-          payload.rule === 'single_request_high' ||
-          currentState === 'red' ||
-          currentState === 'yellow' ||
-          (payload.reason && payload.reason.includes('DEMO'))
+          msg.type === 'SHOW_ALERT' && (
+            payload.rule === 'projected_exhaustion' ||
+            payload.rule === 'single_request_high' ||
+            payload.rule === 'test_alert' ||
+            currentState === 'red' ||
+            (payload.reason && payload.reason.includes('DEMO'))
+          )
         );
 
         isAlertActive = isRealAlert;
@@ -764,7 +797,13 @@ app.whenReady().then(() => {
       const parsed = JSON.parse(initialPayloadRaw);
       currentPayload = parsed;
       currentState = parsed.state || 'green';
-      if (currentState !== 'green' || parsed.rule) {
+      const isRealAlert = Boolean(
+        parsed.rule === 'projected_exhaustion' ||
+        parsed.rule === 'single_request_high' ||
+        parsed.rule === 'test_alert' ||
+        currentState === 'red'
+      );
+      if (isRealAlert) {
         isAlertActive = true;
         setTimeout(() => {
           togglePanelVisibility(true);
